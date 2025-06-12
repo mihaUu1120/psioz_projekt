@@ -81,7 +81,36 @@ def add_plate_to_db(plate):
         conn.commit()
         print(f"Dodano tablicę '{plate}' do bazy danych.")
 
+def calculate_overlap(vehicle_box, zone_box):
+    """
+    Oblicza stosunek pola przecięcia do pola prostokąta pojazdu.
+    Zwraca wartość od 0.0 do 1.0.
+    Format pudełka: (x1, y1, x2, y2)
+    """
+    vx1, vy1, vx2, vy2 = vehicle_box
+    zx1, zy1, zx2, zy2 = zone_box
 
+    # Oblicz współrzędne prostokąta będącego częścią wspólną (przecięciem)
+    inter_x1 = max(vx1, zx1)
+    inter_y1 = max(vy1, zy1)
+    inter_x2 = min(vx2, zx2)
+    inter_y2 = min(vy2, zy2)
+
+    # Oblicz pole części wspólnej
+    inter_width = max(0, inter_x2 - inter_x1)
+    inter_height = max(0, inter_y2 - inter_y1)
+    intersection_area = inter_width * inter_height
+
+    # Oblicz pole prostokąta pojazdu
+    vehicle_area = (vx2 - vx1) * (vy2 - vy1)
+
+    # Unikaj dzielenia przez zero, jeśli pole pojazdu jest równe 0
+    if vehicle_area == 0:
+        return 0.0
+
+    # Oblicz i zwróć stosunek pokrycia
+    overlap_ratio = intersection_area / vehicle_area
+    return overlap_ratio
 
 # --- Bufor tablic i danych śledzenia ---
 track_to_plate = {} # przypisanie track_id → tablica
@@ -91,6 +120,7 @@ track_last_y = {} # ostatnia pozycja Y dla określenia kierunku
 
 frame_num = 0
 
+# --- Główna pętla programu (zaktualizowana) ---
 while True:
     ret_b, frame_b = cap_bot.read()
     ret_t, frame_t = cap_top.read()
@@ -110,54 +140,49 @@ while True:
         if cls != TARGET_CLASS: continue
 
         x1, y1, x2, y2 = map(int, r.xyxy[0])
-        # DeepSort oczekuje formatu (x, y, width, height) dla detekcji
         detections.append(([x1, y1, x2-x1, y2-y1], float(r.conf[0]), cls))
 
     tracks = tracker.update_tracks(detections, frame=frame_t)
     for tr in tracks:
-        # Pamiętaj, żeby używać tylko potwierdzonych tracków
         if not tr.is_confirmed():
             continue
 
         tid = tr.track_id
-        # Używamy bezpośrednio bounding boxa z DeepSort, jest stabilniejszy
-        l, t, r_, b = map(int, tr.to_ltrb()) # lewa, górna, prawa, dolna (bounding box pojazdu)
-
-        # Obliczanie środka boxa dla trajektorii
+        l, t, r_, b = map(int, tr.to_ltrb())
         cx, cy = (l + r_) // 2, (t + b) // 2
 
-        # --- Logika kierunku ruchu i trajektorii (przeniesiona z drugiego kodu) ---
-        direction = "S" # Stojący (Stationary)
+        # --- Logika kierunku ruchu (bez zmian) ---
+        direction = "S"
         if tid in track_last_y:
             prev_y = track_last_y[tid]
-            if cy < prev_y - 5: # Pojazd porusza się w górę obrazu
-                direction = "F" # Do przodu (Forward)
-            elif cy > prev_y + 5: # Pojazd porusza się w dół obrazu
-                direction = "B" # Do tyłu (Backward)
-        track_last_y[tid] = cy # Aktualizuj ostatnią pozycję Y
+            if cy < prev_y - 5: direction = "F"
+            elif cy > prev_y + 5: direction = "B"
+        track_last_y[tid] = cy
 
-        # Aktualizacja trajektorii ruchu
+        # --- Logika trajektorii (bez zmian) ---
         if tid not in track_history:
             track_history[tid] = []
         track_history[tid].append((cx, cy))
-        if len(track_history[tid]) > 50:  # ogranicz długość historii trajektorii
+        if len(track_history[tid]) > 50:
             track_history[tid] = track_history[tid][-50:]
+        
+        # --- NOWA LOGIKA WEJŚCIA W STREFĘ ---
+        # Zamiast sprawdzać, czy pojazd jest w całości w strefie,
+        # obliczamy procent jego pokrycia ze strefą.
+        
+        vehicle_box = (l, t, r_, b)
+        overlap_ratio = calculate_overlap(vehicle_box, ENTRYPOINT_ZONE)
+        is_in_zone_by_overlap = overlap_ratio >= OVERLAP_THRESHOLD
 
-        # --- Logika OCR i Entrypoint (pozostała bez zmian, ale rysowanie oparte na tr.to_ltrb()) ---
-        # Sprawdź, czy cały prostokąt pojazdu znajduje się w strefie entrypoint
-        is_fully_in_zone = (l >= x1_ep and t >= y1_ep and r_ <= x2_ep and b <= y2_ep)
+        # Sprawdź, czy pojazd wjechał w strefę wystarczająco głęboko (tylko raz)
+        if not track_entered_zone.get(tid, False) and is_in_zone_by_overlap:
+            track_entered_zone[tid] = True # Oznacz, że pojazd aktywował strefę
+            print(f"Pojazd ID:{tid} pokrył {overlap_ratio:.0%} strefy. Rozpoczynam odczyt tablicy.")
 
-        # Sprawdź, czy pojazd wjechał w strefę entrypoint (tylko raz)
-        if not track_entered_zone.get(tid, False) and is_fully_in_zone:
-            track_entered_zone[tid] = True # Oznacz, że pojazd wjechał
-            print(f"Pojazd ID:{tid} wjechał CAŁY w strefę entrypoint.")
-
-        # Jeśli pojazd CAŁKOWICIE wjechał w strefę i nie ma jeszcze przypisanej tablicy, spróbuj odczytać OCR
+        # --- Logika OCR (uruchamiana po aktywacji strefy) ---
         if track_entered_zone.get(tid, False) and tid not in track_to_plate:
-            print(f"Pojazd ID:{tid} w strefie (cały), próba odczytu tablicy z dolnej kamery.")
-            # Wykonaj detekcję samochodów na dolnej kamerze
-            # Możesz spróbować imgsz=1280 dla lepszej detekcji na dolnej kamerze, jeśli potrzebujesz
-            results_b = detector(frame_b, imgsz=640)[0]
+            # Użyj verbose=False również tutaj dla spójności
+            results_b = detector(frame_b, imgsz=640, verbose=False)[0]
             found_plate_this_frame = None
 
             for r_b in results_b.boxes:
@@ -166,63 +191,42 @@ while True:
                 if cls_b != TARGET_CLASS: continue
 
                 x1_b, y1_b, x2_b, y2_b = map(int, r_b.xyxy[0])
-
-                # Upewnij się, że crop jest prawidłowy i nie wychodzi poza obraz
                 if y1_b >= 0 and y2_b <= frame_b.shape[0] and x1_b >= 0 and x2_b <= frame_b.shape[1]:
                     crop = frame_b[y1_b:y2_b, x1_b:x2_b]
-                    if crop.shape[0] > 0 and crop.shape[1] > 0:
+                    if crop.size > 0:
                         ocr_res = ocr.readtext(crop)
-                        for bbox, text, conf in ocr_res:
-                            # Przetwarzanie i walidacja tablicy
+                        for _, text, _ in ocr_res:
                             txt = text.replace(" ", "").upper()
-                            # Dodano bardziej rygorystyczną walidację dla polskich tablic
-                            if 4 <= len(txt) <= 10 and txt.isalnum(): # Przykładowa walidacja alfanumeryczna
-                                # Opcjonalnie: Dodaj Regex do walidacji PL tablic
-                                # import re
-                                # if re.fullmatch(r'[A-Z]{2,3}\d{4,5}[A-Z]{0,2}', txt):
+                            if 4 <= len(txt) <= 10 and txt.isalnum():
                                 found_plate_this_frame = txt
                                 print(f"Znaleziono tablicę '{found_plate_this_frame}' dla ID:{tid}.")
-                                break # Znaleziono sensowną tablicę w tym boxie
-                        if found_plate_this_frame:
-                            break # Znaleziono sensowną tablicę w tej klatce, nie szukaj dalej
-
+                                break
+                    if found_plate_this_frame: break
+            
             if found_plate_this_frame:
                 track_to_plate[tid] = found_plate_this_frame
                 add_plate_to_db(found_plate_this_frame)
             else:
-                print(f"Nie znaleziono tablicy dla ID:{tid} w tej klatce. Próbuję dalej...")
+                print(f"Nie znaleziono tablicy dla ID:{tid} w tej klatce.")
 
-
-        # --- Wyświetl etykietę i bounding box (używamy l, t, r_, b z tracka) ---
+        # --- Rysowanie na klatce (bez zmian) ---
         label_text = track_to_plate.get(tid, f"ID:{tid}")
-        
-        # Dodajemy kierunek ruchu do etykiety, jeśli jest znany
         if direction != "S":
             label_text += f" {direction}"
+        
+        color = (0, 255, 0) if is_plate_in_db(track_to_plate.get(tid, '')) else (0, 0, 255)
+        cv2.rectangle(frame_t, (l, t), (r_, b), color, 2)
+        cv2.putText(frame_t, label_text, (l, t - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
 
-        color = (0,255,0) if is_plate_in_db(track_to_plate.get(tid, '')) else (0,0,255) # Zielony jeśli w bazie, czerwony jeśli nie
+        if tid in track_history:
+            pts = track_history[tid]
+            for i in range(1, len(pts)):
+                cv2.line(frame_t, pts[i - 1], pts[i], (0, 255, 255), 2)
 
-        cv2.rectangle(frame_t, (l,t),(r_,b), color, 2)
-        cv2.putText(frame_t, label_text, (l, t-10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
-
-        # Rysowanie trajektorii
-        pts = track_history[tid]
-        for i in range(1, len(pts)):
-            cv2.line(frame_t, pts[i - 1], pts[i], (0, 255, 255), 2)
-
-
-    # Narysuj strefę entrypoint na górnej kamerze (dla wizualizacji)
-    cv2.rectangle(frame_t, (x1_ep, y1_ep), (x2_ep, y2_ep), (255, 0, 0), 2) # Niebieski prostokąt
+    # Rysowanie strefy i wyświetlanie (bez zmian)
+    cv2.rectangle(frame_t, (x1_ep, y1_ep), (x2_ep, y2_ep), (255, 0, 0), 2)
     cv2.putText(frame_t, "Entrypoint Zone", (x1_ep, y1_ep - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 0), 2)
-
-
-    # Pokaż podgląd
-    # cv2.namedWindow("Dolna kamera – OCR", cv2.WINDOW_NORMAL)
-    # cv2.setWindowProperty("Dolna kamera – OCR", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
     cv2.imshow("Dolna kamera – OCR", frame_b)
-
-    # cv2.namedWindow("Górna kamera – tracking i Entrypoint", cv2.WINDOW_NORMAL)
-    # cv2.setWindowProperty("Górna kamera – tracking i Entrypoint", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
     cv2.imshow("Górna kamera – tracking i Entrypoint", frame_t)
 
     if cv2.waitKey(1) & 0xFF == ord('q'):
