@@ -13,6 +13,8 @@ CONFIDENCE_THRESHOLD = 0.65
 model = YOLO(MODEL_PATH)
 tracker = DeepSort(max_age=30)
 cap = cv2.VideoCapture(VIDEO_SOURCE)
+cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
+cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
 
 track_history = {}
 track_last_y = {} 
@@ -83,8 +85,8 @@ while cap.isOpened():
                 cv2.line(frame, pts[i - 1], pts[i], (0, 255, 255), 2)
 
 
-    cv2.namedWindow("YOLOv8 + DeepSORT", cv2.WINDOW_NORMAL)
-    cv2.resizeWindow("YOLOv8 + DeepSORT", 1920, 1080)
+    # cv2.namedWindow("YOLOv8 + DeepSORT", cv2.WINDOW_NORMAL)
+    # cv2.resizeWindow("YOLOv8 + DeepSORT", 1920, 1080)
     cv2.imshow("YOLOv8 + DeepSORT", frame)
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
