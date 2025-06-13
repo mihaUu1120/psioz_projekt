@@ -5,15 +5,19 @@ import numpy as np
 from ultralytics import YOLO
 from deep_sort_realtime.deepsort_tracker import DeepSort
 
+
 # --- Konfiguracja ---
 DETECTION_MODEL_PATH = "best_dziala_90.pt"
+DETECTION_MODEL_PLATES_PATH = "best_plates.pt"
 VIDEO_SOURCE_BOTTOM = 0  # Dolna kamera – odczyt tablic
 VIDEO_SOURCE_TOP = 1     # Górna kamera – śledzenie
 TARGET_CLASS = "car"
-CONFIDENCE_THRESHOLD = 0.65 # Zwiększona pewność detekcji
+PLATE_TARGET_CLASS = "plate"
+CONFIDENCE_THRESHOLD = 0.65
+PLATE_CONFIDENCE_THRESHOLD = 0.65
 
 # --- Konfiguracja Entrypoint ---
-ENTRYPOINT_ZONE = (1242, 845, 1637, 1014) # Współrzędne do dostosowania!
+ENTRYPOINT_ZONE = (1280, 852, 1642, 1016) # Współrzędne do dostosowania!
 OVERLAP_THRESHOLD = 0.80 # (NOWOŚĆ) Wymagane 80% pokrycia strefy przez pojazd
 # Współrzędne (x1_ep, y1_ep, x2_ep, y2_ep) dla ENTRYPOINT_ZONE
 x1_ep, y1_ep, x2_ep, y2_ep = ENTRYPOINT_ZONE
@@ -22,8 +26,12 @@ x1_ep, y1_ep, x2_ep, y2_ep = ENTRYPOINT_ZONE
 FRAME_WIDTH = 1920
 FRAME_HEIGHT = 1080
 
+ENTRY_FRAME_WIDTH = 1080
+ENTRY_FRAME_HEIGHT = 1920
+
 # --- Inicjalizacja ---
 detector = YOLO(DETECTION_MODEL_PATH)
+plate_detector = YOLO(DETECTION_MODEL_PLATES_PATH) 
 ocr = easyocr.Reader(['pl']) # Zmieniono język na polski
 tracker = DeepSort(max_age=90, n_init=3) # Zwiększono max_age i dodano n_init
 
@@ -113,6 +121,9 @@ def calculate_overlap(vehicle_box, zone_box):
     overlap_ratio = intersection_area / vehicle_area
     return overlap_ratio
 
+def crop_margins(image: np.ndarray, margin: int = 5) -> np.ndarray:
+    h, w = image.shape[:2]
+    return image[margin:h-margin, margin:w-margin]
 
 def preprocess_for_ocr(image: np.ndarray) -> np.ndarray:
     """
@@ -139,8 +150,13 @@ def preprocess_for_ocr(image: np.ndarray) -> np.ndarray:
 
     # 5. Wyostrzanie (Twoja propozycja) - używamy "jądra" (kernel)
     # Działa dobrze, ale może wzmocnić też szum, dlatego stosujemy po rozmyciu.
-    kernel = np.array([[-1,-1,-1], [-1,9,-1], [-1,-1,-1]])
+    kernel = np.array([[-1,-1,-1],
+                       [-1,12,-1],
+                       [-1,-1,-1]])
+    # kernel = np.array([[0,-1,0], [-1,15,-1], [0,-1,0]])
     sharpened = cv2.filter2D(blurred, -1, kernel)
+    
+    sharpened = crop_margins(sharpened, margin=20)
     
     # OPCJONALNIE: Binaryzacja (próg adaptacyjny jest lepszy od stałego)
     # Czasami pomaga, a czasami nie - warto przetestować.
@@ -205,7 +221,7 @@ while True:
         if len(track_history[tid]) > 50:
             track_history[tid] = track_history[tid][-50:]
         
-        # --- NOWA LOGIKA WEJŚCIA W STREFĘ ---
+        # --- LOGIKA WEJŚCIA W STREFĘ ---
         # Zamiast sprawdzać, czy pojazd jest w całości w strefie,
         # obliczamy procent jego pokrycia ze strefą.
         
@@ -221,24 +237,33 @@ while True:
         # --- Logika OCR (uruchamiana po aktywacji strefy) ---
         if track_entered_zone.get(tid, False) and tid not in track_to_plate:
             # Użyj verbose=False również tutaj dla spójności
-            results_b = detector(frame_b, imgsz=640, verbose=False)[0]
+            results_b = plate_detector(frame_b, imgsz=640, verbose=False)[0]
             found_plate_this_frame = None
 
             for r_b in results_b.boxes:
-                if float(r_b.conf[0]) < CONFIDENCE_THRESHOLD: continue
+                if float(r_b.conf[0]) < PLATE_CONFIDENCE_THRESHOLD: continue
+                print(f"Pewność OCR: {r_b.conf[0]}")
                 cls_b = detector.names[int(r_b.cls[0])]
                 if cls_b != TARGET_CLASS: continue
 
                 x1_b, y1_b, x2_b, y2_b = map(int, r_b.xyxy[0])
                 if y1_b >= 0 and y2_b <= frame_b.shape[0] and x1_b >= 0 and x2_b <= frame_b.shape[1]:
                     crop = frame_b[y1_b:y2_b, x1_b:x2_b]
+                    preprocessed_crop = preprocess_for_ocr(crop)
+                    cv2.imshow(f"Preprocessed crop", preprocessed_crop)
                     if crop.size > 0:
-                        ocr_res = ocr.readtext(crop)
+                        ocr_res = ocr.readtext(preprocessed_crop)
                         for _, text, _ in ocr_res:
                             txt = text.replace(" ", "").upper()
                             if 4 <= len(txt) <= 10 and txt.isalnum():
                                 found_plate_this_frame = txt
                                 print(f"Znaleziono tablicę '{found_plate_this_frame}' dla ID:{tid}.")
+                                
+                                # --- NOWOŚĆ: Wyświetlanie wyciętej tablicy ---
+                                cv2.imshow(f"OCR Crop - ID:{tid}", preprocessed_crop)
+                                # cv2.waitKey(1) # Możesz użyć waitKey(0) do zatrzymania na klatce
+                                # ----------------------------------------------
+                                
                                 break
                     if found_plate_this_frame: break
             
@@ -265,8 +290,10 @@ while True:
     # Rysowanie strefy i wyświetlanie (bez zmian)
     cv2.rectangle(frame_t, (x1_ep, y1_ep), (x2_ep, y2_ep), (255, 0, 0), 2)
     cv2.putText(frame_t, "Entrypoint Zone", (x1_ep, y1_ep - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 0), 2)
-    cv2.imshow("Dolna kamera – OCR", frame_b)
-    cv2.imshow("Górna kamera – tracking i Entrypoint", frame_t)
+    display_scale = 0.5  # Możesz dostosować np. 0.3, 0.7, 0.8
+    frame_b_resized = cv2.resize(frame_b, None, fx=display_scale, fy=display_scale)
+    cv2.imshow("Dolna kamera - OCR", frame_b_resized)
+    cv2.imshow("Górna kamera - tracking i Entrypoint", frame_t)
 
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
