@@ -1,7 +1,9 @@
 import cv2
 import matplotlib.pyplot as plt
 import numpy as np
-import easyocr
+import pytesseract
+
+pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 
 image = cv2.imread("Przechwytywanie_tablica_rej.PNG")
 
@@ -13,9 +15,6 @@ def preprocess_for_ocr(image: np.ndarray) -> np.ndarray:
     """
     Przygotowuje obraz wyciętej tablicy rejestracyjnej do OCR.
     """
-    # 1. Zmiana rozmiaru (interpolacja sześcienna dla lepszej jakości)
-    # OCR działa najlepiej, gdy wysokość obrazu to ok. 50-100 pikseli.
-        
     h, w = image.shape[:2]
     if h < 50:
         scale_factor = 100 / h
@@ -23,50 +22,40 @@ def preprocess_for_ocr(image: np.ndarray) -> np.ndarray:
         height = int(h * scale_factor)
         image = cv2.resize(image, (width, height), interpolation=cv2.INTER_CUBIC)
 
-    # 2. Konwersja do skali szarości
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     
-    # 3. Zwiększenie kontrastu (CLAHE - znacznie lepsze niż zwykłe wyrównanie)
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
     contrast_enhanced = clahe.apply(gray)
 
-    # 4. Delikatne rozmycie w celu usunięcia szumu (Median Blur dobrze radzi sobie z "pieprzem i solą")
     blurred = cv2.medianBlur(contrast_enhanced, 3)
 
-    # 5. Wyostrzanie (Twoja propozycja) - używamy "jądra" (kernel)
-    # Działa dobrze, ale może wzmocnić też szum, dlatego stosujemy po rozmyciu.
     kernel = np.array([[-1,-1,-1],
                        [-1,12,-1],
                        [-1,-1,-1]])
-    # kernel = np.array([[0,-1,0], [-1,15,-1], [0,-1,0]])
     sharpened = cv2.filter2D(blurred, -1, kernel)
     
     sharpened = crop_margins(sharpened, margin=20)
     
-    # OPCJONALNIE: Binaryzacja (próg adaptacyjny jest lepszy od stałego)
-    # Czasami pomaga, a czasami nie - warto przetestować.
-    # binary = cv2.adaptiveThreshold(sharpened, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-    #                                cv2.THRESH_BINARY, 11, 2)
-    
-    return sharpened # lub 'binary', jeśli zdecydujesz się na ten krok
+    return sharpened
 
+# OCR z pytesseract
+def perform_tesseract(image: np.ndarray) -> str:
+    # pytesseract oczekuje obrazu w skali szarości lub RGB, jeśli jest BGR to konwertujemy:
+    if len(image.shape) == 3 and image.shape[2] == 3:
+        img_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    else:
+        img_rgb = image
 
-# OCR z EasyOCR
-def perform_easyocr(image: np.ndarray) -> str:
-    reader = easyocr.Reader(['pl', 'en'])  # Obsługuje polskie znaki, jeśli występują
-    result = reader.readtext(image)
-    
-    # Wyciągnij tylko teksty z wyników (ignorujemy współrzędne i prawdopodobieństwo na razie)
-    texts = [entry[1] for entry in result]
-    combined_text = ' '.join(texts)
-    return combined_text.strip()
+    # Konfiguracja dla Tesseract (opcjonalnie, można dopasować do tablic rejestracyjnych)
+    config = '--oem 3 --psm 7 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
 
-
+    text = pytesseract.image_to_string(img_rgb, lang='eng+pol', config=config)
+    return text.strip()
 
 processed = preprocess_for_ocr(image)
-recognized_text = perform_easyocr(processed)
+recognized_text = perform_tesseract(processed)
 
-print("Odczytany tekst (EasyOCR):", recognized_text)
+print("Odczytany tekst (Tesseract):", recognized_text)
 
 # Pokaż efekt
 plt.figure(figsize=(10, 5))
@@ -82,5 +71,3 @@ plt.axis('off')
 
 plt.tight_layout()
 plt.show()
-
-
