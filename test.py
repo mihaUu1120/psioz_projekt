@@ -4,17 +4,21 @@ import easyocr
 import numpy as np
 from ultralytics import YOLO
 from deep_sort_realtime.deepsort_tracker import DeepSort
+import pytesseract
+import matplotlib.pyplot as plt
+import re
 
+pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 
 # --- Konfiguracja ---
 DETECTION_MODEL_PATH = "best_dziala_90.pt"
 DETECTION_MODEL_PLATES_PATH = "best_plates.pt"
-VIDEO_SOURCE_BOTTOM = 0  # Dolna kamera – odczyt tablic
-VIDEO_SOURCE_TOP = 1     # Górna kamera – śledzenie
+VIDEO_SOURCE_BOTTOM = 1  # Dolna kamera – odczyt tablic
+VIDEO_SOURCE_TOP = 0     # Górna kamera – śledzenie
 TARGET_CLASS = "car"
 PLATE_TARGET_CLASS = "plate"
 CONFIDENCE_THRESHOLD = 0.65
-PLATE_CONFIDENCE_THRESHOLD = 0.65
+PLATE_CONFIDENCE_THRESHOLD = 0.75
 
 # --- Konfiguracja Entrypoint ---
 ENTRYPOINT_ZONE = (1280, 852, 1642, 1016) # Współrzędne do dostosowania!
@@ -131,39 +135,107 @@ def preprocess_for_ocr(image: np.ndarray) -> np.ndarray:
     """
     # 1. Zmiana rozmiaru (interpolacja sześcienna dla lepszej jakości)
     # OCR działa najlepiej, gdy wysokość obrazu to ok. 50-100 pikseli.
-    h, w = image.shape[:2]
-    if h < 50:
-        scale_factor = 100 / h
-        width = int(w * scale_factor)
-        height = int(h * scale_factor)
-        image = cv2.resize(image, (width, height), interpolation=cv2.INTER_CUBIC)
+    # h, w = image.shape[:2]
+    # if h < 50:
+    #     scale_factor = 100 / h
+    #     width = int(w * scale_factor)
+    #     height = int(h * scale_factor)
+    #     image = cv2.resize(image, (width, height), interpolation=cv2.INTER_CUBIC)
 
-    # 2. Konwersja do skali szarości
+    
+    # # 2. Konwersja do skali szarości
+    # gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+    # # 3. Zwiększenie kontrastu (CLAHE - znacznie lepsze niż zwykłe wyrównanie)
+    # clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    # contrast_enhanced = clahe.apply(gray)
+
+    # # 4. Delikatne rozmycie w celu usunięcia szumu (Median Blur dobrze radzi sobie z "pieprzem i solą")
+    # blurred = cv2.medianBlur(contrast_enhanced, 3)
+
+    # # 5. Wyostrzanie (Twoja propozycja) - używamy "jądra" (kernel)
+    # # Działa dobrze, ale może wzmocnić też szum, dlatego stosujemy po rozmyciu.
+    # kernel = np.array([[-1,-1,-1],
+    #                    [-1,10,-1],
+    #                    [-1,-1,-1]])
+    # # kernel = np.array([[0,-1,0], [-1,15,-1], [0,-1,0]])
+    # sharpened = cv2.filter2D(blurred, -1, kernel)
+    
+    # return sharpened
+    
+    # gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+    # # CLAHE z łagodniejszymi parametrami
+    # clahe = cv2.createCLAHE(clipLimit=1.5, tileGridSize=(8, 8))
+    # enhanced = clahe.apply(gray)
+
+    # # Lekki filtr wygładzający zamiast medianBlur
+    # denoised = cv2.bilateralFilter(enhanced, d=9, sigmaColor=75, sigmaSpace=75)
+
+    # # Delikatne wyostrzanie
+    # kernel = np.array([[0, -1, 0],
+    #                 [-1, 5, -1],
+    #                 [0, -1, 0]])
+    # sharpened = cv2.filter2D(denoised, -1, kernel)
+    
+    # sharpened = cv2.bitwise_not(sharpened)
+    
+    # return sharpened
+    
+    # sharpened = crop_margins(sharpened, margin=5)
+    
+    # cv2.imshow("Sharpened", sharpened)
+    
+    # _, binary = cv2.threshold(sharpened, 30, 255, cv2.THRESH_BINARY_INV)
+    
+    # cv2.imshow("Binary", binary)
+    
+    # contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    
+    # for cnt in contours:
+    #     area = cv2.contourArea(cnt)
+    #     if area < 80:
+    #         cv2.drawContours(binary, [cnt], -1, 0, -1)  # Zamaluj na czarno
+            
+    # cv2.imshow("Contours", binary)
+    
+    
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
-    # 3. Zwiększenie kontrastu (CLAHE - znacznie lepsze niż zwykłe wyrównanie)
-    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-    contrast_enhanced = clahe.apply(gray)
+    # Otsu
+    _, th_otsu = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    return th_otsu
 
-    # 4. Delikatne rozmycie w celu usunięcia szumu (Median Blur dobrze radzi sobie z "pieprzem i solą")
-    blurred = cv2.medianBlur(contrast_enhanced, 3)
+    # # Stały próg
+    # _, th_fixed = cv2.threshold(gray, 127, 255, cv2.THRESH_BINARY)
 
-    # 5. Wyostrzanie (Twoja propozycja) - używamy "jądra" (kernel)
-    # Działa dobrze, ale może wzmocnić też szum, dlatego stosujemy po rozmyciu.
-    kernel = np.array([[-1,-1,-1],
-                       [-1,12,-1],
-                       [-1,-1,-1]])
-    # kernel = np.array([[0,-1,0], [-1,15,-1], [0,-1,0]])
-    sharpened = cv2.filter2D(blurred, -1, kernel)
+    # # Adaptacyjne - mean
+    # th_mean = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_MEAN_C,
+    #                             cv2.THRESH_BINARY, 11, 2)
+
+    # # Adaptacyjne - gaussian
+    # th_gaussian = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+    #                                 cv2.THRESH_BINARY, 11, 2)
+
+    # # # Wyświetlenie
+    # # titles = ['Original', 'Fixed Threshold', 'Otsu', 'Adaptive Mean', 'Adaptive Gaussian']
+    # # images = [gray, th_fixed, th_otsu, th_mean, th_gaussian]
+
+    # # plt.figure(figsize=(12, 6))
+    # # for i in range(5):
+    # #     plt.subplot(2, 3, i+1)
+    # #     plt.imshow(images[i], cmap='gray')
+    # #     plt.title(titles[i])
+    # #     plt.axis('off')
+    # # plt.tight_layout()
+    # # plt.show()
     
-    sharpened = crop_margins(sharpened, margin=20)
+    # # OPCJONALNIE: Binaryzacja (próg adaptacyjny jest lepszy od stałego)
+    # # Czasami pomaga, a czasami nie - warto przetestować.
+    # # binary = cv2.adaptiveThreshold(sharpened, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+    # #                                cv2.THRESH_BINARY, 11, 2)
     
-    # OPCJONALNIE: Binaryzacja (próg adaptacyjny jest lepszy od stałego)
-    # Czasami pomaga, a czasami nie - warto przetestować.
-    # binary = cv2.adaptiveThreshold(sharpened, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-    #                                cv2.THRESH_BINARY, 11, 2)
-    
-    return sharpened # lub 'binary', jeśli zdecydujesz się na ten krok
+    # return th_otsu # lub 'binary', jeśli zdecydujesz się na ten krok
 
 
 
@@ -242,36 +314,95 @@ while True:
 
             for r_b in results_b.boxes:
                 if float(r_b.conf[0]) < PLATE_CONFIDENCE_THRESHOLD: continue
-                print(f"Pewność OCR: {r_b.conf[0]}")
+                print(f"Pewność rozpoznania tablicy: {r_b.conf[0]}")
                 cls_b = detector.names[int(r_b.cls[0])]
                 if cls_b != TARGET_CLASS: continue
 
                 x1_b, y1_b, x2_b, y2_b = map(int, r_b.xyxy[0])
                 if y1_b >= 0 and y2_b <= frame_b.shape[0] and x1_b >= 0 and x2_b <= frame_b.shape[1]:
                     crop = frame_b[y1_b:y2_b, x1_b:x2_b]
-                    preprocessed_crop = preprocess_for_ocr(crop)
-                    cv2.imshow(f"Preprocessed crop", preprocessed_crop)
-                    if crop.size > 0:
-                        ocr_res = ocr.readtext(preprocessed_crop)
-                        for _, text, _ in ocr_res:
-                            txt = text.replace(" ", "").upper()
-                            if 4 <= len(txt) <= 10 and txt.isalnum():
-                                found_plate_this_frame = txt
-                                print(f"Znaleziono tablicę '{found_plate_this_frame}' dla ID:{tid}.")
+                    crop = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
+                    # preprocessed_crop = preprocess_for_ocr(crop)
+                    # cv2.imshow(f"Preprocessed crop", preprocessed_crop)
+                    # crop = preprocessed_crop
+            #         if crop.size > 0:
+            #             ocr_res = ocr.readtext(crop)
+            #             print("Pewność OCR: ", ocr_res[0][2])
+            #             if ocr_res[0][2] < 0.8:
+            #                 continue
+                        
+            #             extracted_texts = [res[1] for res in ocr_res]
+            #             text = ''.join(extracted_texts)
+                        
+            #             print("Odczytany tekst:", text)
+            #             print("Odczytany tekst (easyOCR):", extracted_texts)
+
+            #             for _, text, _ in ocr_res:
+            #                 txt = text.replace(" ", "").upper()
+            #                 if 5 <= len(txt) <= 10 and txt.isalnum():
+            #                     found_plate_this_frame = txt
+            #                     print(f"Znaleziono tablicę '{found_plate_this_frame}' dla ID:{tid}.")
                                 
-                                # --- NOWOŚĆ: Wyświetlanie wyciętej tablicy ---
-                                cv2.imshow(f"OCR Crop - ID:{tid}", preprocessed_crop)
-                                # cv2.waitKey(1) # Możesz użyć waitKey(0) do zatrzymania na klatce
-                                # ----------------------------------------------
+            #                     # --- NOWOŚĆ: Wyświetlanie wyciętej tablicy ---
+            #                     cv2.imshow(f"OCR Crop - ID:{tid}", crop)
+            #                     # cv2.waitKey(1) # Możesz użyć waitKey(0) do zatrzymania na klatce
+            #                     # ----------------------------------------------
                                 
-                                break
-                    if found_plate_this_frame: break
+            #                     break
+            #         if found_plate_this_frame: break
             
-            if found_plate_this_frame:
-                track_to_plate[tid] = found_plate_this_frame
-                add_plate_to_db(found_plate_this_frame)
-            else:
-                print(f"Nie znaleziono tablicy dla ID:{tid} w tej klatce.")
+            # if found_plate_this_frame:
+            #     track_to_plate[tid] = found_plate_this_frame
+            #     add_plate_to_db(found_plate_this_frame)
+            # else:
+            #     print(f"Nie znaleziono tablicy dla ID:{tid} w tej klatce.")
+            
+            
+                    if crop.size > 0:
+                        crop_rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
+
+                        config = '--oem 3 --psm 7 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+
+                        # OCR zwraca jeden string
+                        raw_text = pytesseract.image_to_string(crop_rgb, lang='eng+pol', config=config)
+
+                        print("Surowy tekst (Tesseract):", raw_text)
+
+                        # Podział tekstu na słowa i oczyszczanie
+                        words = raw_text.split()
+                        cleaned_parts = [re.sub(r'\W+', '', word).upper() for word in words if word.strip()]
+
+                        # Usuwamy puste po oczyszczeniu
+                        cleaned_parts = [word for word in cleaned_parts if word]
+
+                        print("Oczyszczone części:", cleaned_parts)
+
+                        if not cleaned_parts:
+                            continue
+
+                        # Łączymy w jeden ciąg i próbujemy znaleźć kandydatów
+                        combined_text = ''.join(cleaned_parts)
+                        print("Połączony tekst:", combined_text)
+
+                        # Możesz tu użyć heurystyki dla polskich tablic
+                        candidates = re.findall(r'^[A-Z]{2,3}[A-Z0-9]{3,7}$', combined_text)
+                        
+                        if candidates:
+                            found_plate_this_frame = candidates[0]
+                            print(f"Znaleziono tablicę '{found_plate_this_frame}' dla ID:{tid}.")
+
+                            # --- Wyświetlanie wyciętej tablicy ---
+                            cv2.imshow(f"OCR Crop - ID:{tid}", crop)
+                            # cv2.waitKey(1)
+                            # -------------------------------------
+                        else:
+                            print("Brak kandydatów spełniających wzorzec.")
+
+                if found_plate_this_frame:
+                    track_to_plate[tid] = found_plate_this_frame
+                    add_plate_to_db(found_plate_this_frame)
+                else:
+                    print(f"Nie znaleziono tablicy dla ID:{tid} w tej klatce.")
 
         # --- Rysowanie na klatce (bez zmian) ---
         label_text = track_to_plate.get(tid, f"ID:{tid}")

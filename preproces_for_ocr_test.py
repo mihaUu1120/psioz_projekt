@@ -1,4 +1,5 @@
 import cv2
+import easyocr
 import matplotlib.pyplot as plt
 import numpy as np
 import pytesseract
@@ -6,6 +7,7 @@ import pytesseract
 pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 
 image = cv2.imread("Przechwytywanie_tablica_rej.PNG")
+image2 = cv2.imread("Przechwytywanie_tablica_rej_2.PNG")
 
 def crop_margins(image: np.ndarray, margin: int = 5) -> np.ndarray:
     h, w = image.shape[:2]
@@ -30,13 +32,30 @@ def preprocess_for_ocr(image: np.ndarray) -> np.ndarray:
     blurred = cv2.medianBlur(contrast_enhanced, 3)
 
     kernel = np.array([[-1,-1,-1],
-                       [-1,12,-1],
+                       [-1,10,-1],
                        [-1,-1,-1]])
     sharpened = cv2.filter2D(blurred, -1, kernel)
     
     sharpened = crop_margins(sharpened, margin=20)
     
     return sharpened
+
+def keep_only_black(image, threshold_value=50):
+    """
+    Zostawia tylko czarne (lub bardzo ciemne) piksele. Resztę zamienia na białe.
+    `threshold_value` określa, jak ciemny musi być piksel, by został (0–255).
+    """
+    # Zakładamy, że obraz jest w skali szarości
+    # Jeśli nie, konwertujemy
+    if len(image.shape) == 3:
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    
+    # Wszystko poniżej threshold zostaje czarne (0), reszta staje się biała (255)
+    _, binary = cv2.threshold(image, threshold_value, 255, cv2.THRESH_BINARY_INV)
+    # binary = cv2.bitwise_not(binary)
+    return binary
+
+
 
 # OCR z pytesseract
 def perform_tesseract(image: np.ndarray) -> str:
@@ -52,8 +71,15 @@ def perform_tesseract(image: np.ndarray) -> str:
     text = pytesseract.image_to_string(img_rgb, lang='eng+pol', config=config)
     return text.strip()
 
-processed = preprocess_for_ocr(image)
+# processed = preprocess_for_ocr(image)
+processed = image2
+processed = keep_only_black(processed)
 recognized_text = perform_tesseract(processed)
+
+reader = easyocr.Reader(['en'])
+results = reader.readtext(processed)
+extracted_texts = [res[1] for res in results]
+print("Odczytany tekst (easyOCR):", extracted_texts)
 
 print("Odczytany tekst (Tesseract):", recognized_text)
 
