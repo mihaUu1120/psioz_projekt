@@ -2,34 +2,48 @@ import cv2
 import sys
 
 # --- Konfiguracja ---
-# Wpisz ID kamery, na której chcesz wybrać strefę.
-# Dla górnej kamery w Twoim głównym skrypcie to było ID = 1.
-ID_KAMERY = 1 
+ID_KAMERY = 0
 FRAME_WIDTH = 1920
 FRAME_HEIGHT = 1080
 
-# Globalne zmienne do przechowywania punktów i stanu rysowania
-ref_point = []
+# Globalne zmienne
+zones = []  # Lista prostokątów: [(x1, y1, x2, y2), ...]
 drawing = False
+start_point = None
+frame = None
+clone = None
 
 def select_zone_callback(event, x, y, flags, param):
-    """Funkcja zwrotna obsługująca zdarzenia myszy."""
-    global ref_point, drawing
+    """Funkcja obsługująca zdarzenia myszy."""
+    global drawing, start_point, frame, zones, clone
 
+    temp_frame = clone.copy()
+    
     if event == cv2.EVENT_LBUTTONDOWN:
-        # Rozpocznij rysowanie po wciśnięciu lewego przycisku myszy
-        ref_point = [(x, y)]
+        start_point = (x, y)
         drawing = True
 
+    elif event == cv2.EVENT_MOUSEMOVE and drawing:
+        cv2.rectangle(temp_frame, start_point, (x, y), (0, 255, 0), 2)
+        # Rysuj też poprzednie strefy
+        for rect in zones:
+            cv2.rectangle(temp_frame, (rect[0], rect[1]), (rect[2], rect[3]), (0, 255, 0), 2)
+        cv2.imshow("Wybierz strefy", temp_frame)
+
     elif event == cv2.EVENT_LBUTTONUP:
-        # Zakończ rysowanie po puszczeniu przycisku
-        ref_point.append((x, y))
         drawing = False
+        end_point = (x, y)
 
-        # Narysuj finalny prostokąt na obrazie
-        cv2.rectangle(frame, ref_point[0], ref_point[1], (0, 255, 0), 2)
-        cv2.imshow("Wybierz strefe", frame)
+        x1, y1 = min(start_point[0], end_point[0]), min(start_point[1], end_point[1])
+        x2, y2 = max(start_point[0], end_point[0]), max(start_point[1], end_point[1])
+        zones.append((x1, y1, x2, y2))
 
+        # Rysuj wszystkie strefy
+        frame = clone.copy()
+        for rect in zones:
+            cv2.rectangle(frame, (rect[0], rect[1]), (rect[2], rect[3]), (0, 255, 0), 2)
+        clone = frame.copy()
+        cv2.imshow("Wybierz strefy", frame)
 
 # --- Główna część programu ---
 cap = cv2.VideoCapture(ID_KAMERY)
@@ -42,12 +56,9 @@ cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
 
 print("Uruchomiono podgląd z kamery.")
-print("Naciśnij klawisz 's', aby zapisać klatkę i przejść do wyboru strefy.")
+print("Naciśnij klawisz 's', aby zapisać klatkę i przejść do wyboru stref.")
 print("Naciśnij klawisz 'q', aby zamknąć.")
 
-frame = None
-
-# Pętla do przechwycenia idealnej klatki
 while True:
     ret, current_frame = cap.read()
     if not ret:
@@ -62,8 +73,7 @@ while True:
         cv2.destroyAllWindows()
         sys.exit()
     elif key == ord('s'):
-        frame = current_frame
-        print("Klatka zapisana. Możesz teraz wybrać strefę.")
+        frame = current_frame.copy()
         break
 
 cv2.destroyAllWindows()
@@ -71,44 +81,34 @@ cap.release()
 
 if frame is not None:
     clone = frame.copy()
-    cv2.namedWindow("Wybierz strefe")
-    cv2.setMouseCallback("Wybierz strefe", select_zone_callback)
+    cv2.namedWindow("Wybierz strefy")
+    cv2.setMouseCallback("Wybierz strefy", select_zone_callback)
 
     print("\n--- INSTRUKCJA ---")
-    print("1. Kliknij i przytrzymaj lewy przycisk myszy, aby rozpocząć rysowanie prostokąta.")
-    print("2. Przeciągnij mysz, aby narysować strefę.")
-    print("3. Puść przycisk myszy, aby zakończyć.")
-    print("4. Współrzędne pojawią się w konsoli.")
-    print("5. Naciśnij 'r', aby zresetować wybór.")
-    print("6. Naciśnij 'q', aby zakończyć i wyświetlić finalne współrzędne.")
+    print("1. Kliknij i przeciągnij, aby zaznaczyć strefę.")
+    print("2. Możesz dodać wiele stref.")
+    print("3. Naciśnij 'r', aby zresetować wszystkie strefy.")
+    print("4. Naciśnij 'q', aby zakończyć i wypisać współrzędne.")
 
     while True:
-        cv2.imshow("Wybierz strefe", frame)
+        cv2.imshow("Wybierz strefy", frame)
         key = cv2.waitKey(1) & 0xFF
 
         if key == ord('r'):
-            # Resetuj wybór po naciśnięciu 'r'
+            zones = []
             frame = clone.copy()
-            ref_point = []
-            print("Wybór zresetowany. Możesz rysować od nowa.")
-        
+            print("Zresetowano wszystkie strefy.")
+
         elif key == ord('q'):
             break
 
     cv2.destroyAllWindows()
 
-    # Wyświetl finalne, uporządkowane współrzędne
-    if len(ref_point) == 2:
-        x1 = min(ref_point[0][0], ref_point[1][0])
-        y1 = min(ref_point[0][1], ref_point[1][1])
-        x2 = max(ref_point[0][0], ref_point[1][0])
-        y2 = max(ref_point[0][1], ref_point[1][1])
-        
-        final_coords = (x1, y1, x2, y2)
-        
+    if zones:
         print("\n=======================================================")
-        print("Twoje współrzędne strefy są gotowe do skopiowania!")
-        print(f"ENTRYPOINT_ZONE = {final_coords}")
+        print("Twoje współrzędne stref są gotowe do skopiowania!")
+        for i, rect in enumerate(zones, 1):
+            print(f"ZONE_{i} = {rect}")
         print("=======================================================")
     else:
-        print("\nNie wybrano strefy.")
+        print("\nNie wybrano żadnych stref.")
