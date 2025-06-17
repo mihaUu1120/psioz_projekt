@@ -104,7 +104,7 @@ def init_db():
     ''')
 
     # Dodanie przykładowych danych
-    sample_plates = [('KR12345',), ('WE54321',), ('PO67890',)]
+    sample_plates = [('EC22T11',), ('WE54321',), ('PO67890',)]
     cursor.executemany('INSERT INTO authorized_vehicles VALUES (?)', sample_plates)
     
     conn.commit()
