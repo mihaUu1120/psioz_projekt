@@ -104,7 +104,7 @@ def init_db():
     ''')
 
     # Dodanie przykładowych danych
-    sample_plates = [('EC22T11',), ('WE54321',), ('PO67890',)]
+    sample_plates = [('EC22T11',), ('EL8U902',), ('8008',)]
     cursor.executemany('INSERT INTO authorized_vehicles VALUES (?)', sample_plates)
     
     conn.commit()
@@ -113,6 +113,7 @@ def init_db():
 
 
 # --- Endpointy API ---
+
 
 @app.route('/entry_request', methods=['POST'])
 def handle_entry_request():

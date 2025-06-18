@@ -20,7 +20,7 @@ PLATE_MODEL_PATH = "best_plates.pt"
 # --- DEFINICJE STREF ---
 # Współrzędne wielokątów muszą być dopasowane do Twojego ujęcia z kamery
 # Strefa, w której aktywnie szukamy aut i odczytujemy tablice
-READ_ZONE_POLY = np.array([[190, 678], [932, 678], [932, 1694], [190, 1694]], np.int32)
+READ_ZONE_POLY = np.array([[34, 576], [1070, 576], [1070, 1782], [34, 1782]], np.int32)
 # Strefa za wirtualną bramką. Służy do weryfikacji, czy auto przejechało
 PASSAGE_ZONE_POLY = np.array([[140, 1700], [1018, 1700], [1018, 1902], [140, 1902]], np.int32)
 
@@ -52,8 +52,8 @@ def main():
         return
 
     # Inicjalizacja maszyny stanów
-    # current_state = "CZEKANIE_NA_AUTO"
-    current_state = "ODCZYTYWANIE_TABLICY"
+    current_state = "CZEKANIE_NA_AUTO"
+    # current_state = "ODCZYTYWANIE_TABLICY"
     gate_status = "ZAMKNIETA"
     message = ""
     last_api_call_time = 0
@@ -71,27 +71,32 @@ def main():
 
         # --- Logika maszyny stanów ---
 
-        # if current_state == "CZEKANIE_NA_AUTO":
-        #     gate_status = "ZAMKNIETA"
-        #     message = ""
-        #     car_detections = car_model(frame, classes=[2], verbose=False)[0]
+        if current_state == "CZEKANIE_NA_AUTO":
+            gate_status = "ZAMKNIETA"
+            message = ""
+            car_detections = car_model(frame, classes=[2], verbose=False)[0]
             
-        #     car_in_zone = False
-        #     for box in car_detections.boxes:
-        #         if box.conf[0] > CONFIDENCE_THRESHOLD_CAR:
-        #             x1, y1, x2, y2 = map(int, box.xyxy[0])
-        #             # Sprawdź, czy środek auta jest w strefie odczytu
-        #             car_center_x = (x1 + x2) // 2
-        #             if cv2.pointPolygonTest(READ_ZONE_POLY, (car_center_x, y1), False) >= 0:
-        #                 car_in_zone = True
-        #                 break
+            car_in_zone = False
+            for box in car_detections.boxes:
+                if box.conf[0] > CONFIDENCE_THRESHOLD_CAR:
+                    x1, y1, x2, y2 = map(int, box.xyxy[0])
+                    # Sprawdź, czy środek auta jest w strefie odczytu
+                    car_center_x = (x1 + x2) // 2
+                    if cv2.pointPolygonTest(READ_ZONE_POLY, (car_center_x, y1), False) >= 0:
+                        car_in_zone = True
+                        
+                        detected_car = frame[y1:y2, x1:x2]  # Wytnij prostokąt z obrazu
+                        if detected_car.size > 0:  # Sprawdź, czy obraz nie jest pusty
+                            cv2.imshow("Wykryty samochod", detected_car)
+                        
+                        break
             
-        #     if car_in_zone:
-        #         current_state = "ODCZYTYWANIE_TABLICY"
-        #         state_timer = time.time()
-        #         print(f"Nowy stan: {current_state}")
+            if car_in_zone:
+                current_state = "ODCZYTYWANIE_TABLICY"
+                state_timer = time.time()
+                print(f"Nowy stan: {current_state}")
 
-        if current_state == "ODCZYTYWANIE_TABLICY":
+        elif current_state == "ODCZYTYWANIE_TABLICY":
             message = "Odczytywanie tablicy..."
             # Szukaj tablicy tylko w obszarze strefy odczytu
             plate_detections = plate_model(frame, verbose=False)[0]
@@ -101,19 +106,22 @@ def main():
                 if box.conf[0] > CONFIDENCE_THRESHOLD_PLATE:
                     x1, y1, x2, y2 = map(int, box.xyxy[0])
                     plate_img = frame[y1:y2, x1:x2]
+                    cv2.imshow("Wykryta tablica", plate_img)
                     
-                    try:
-                        ocr_result = reader.readtext(plate_img)
-                        if ocr_result:
-                            plate_text = clean_plate_text(ocr_result[0][1])
-                            # Sprawdź, czy tablica ma sensowną długość
-                            if 4 < len(plate_text) < 9:
-                                print(f"Odczytano tablicę: {plate_text}")
-                                last_known_plate = plate_text
-                                plate_found = True
-                                break
-                    except Exception as e:
-                        print(f"Błąd OCR: {e}")
+                    plate_found = True
+                    last_known_plate = "EL8U902"
+                    # try:
+                    #     ocr_result = reader.readtext(plate_img)
+                    #     if ocr_result:
+                    #         plate_text = clean_plate_text(ocr_result[0][1])
+                    #         # Sprawdź, czy tablica ma sensowną długość
+                    #         if 4 < len(plate_text) < 9:
+                    #             print(f"Odczytano tablicę: {plate_text}")
+                    #             last_known_plate = plate_text
+                    #             plate_found = True
+                    #             break
+                    # except Exception as e:
+                    #     print(f"Błąd OCR: {e}")
 
             if plate_found and time.time() - last_api_call_time > 5: # Unikaj wielokrotnych zapytań
                 print(f"Wysyłanie prośby o wjazd dla: {last_known_plate}")
