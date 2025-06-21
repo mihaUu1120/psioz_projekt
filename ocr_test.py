@@ -8,7 +8,7 @@ import numpy as np
 reader = easyocr.Reader(['pl'])
 
 # Foldery
-INPUT_FOLDER = 'zapisane_tablice_2_przerobione'
+INPUT_FOLDER = 'tablice'
 OUTPUT_FOLDER = 'wyniki'
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
