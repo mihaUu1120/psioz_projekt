@@ -112,6 +112,13 @@ FRAME_HEIGHT = 1080
 INITIALIZATION_FRAMES = 100  # Liczba klatek, przez które działa ponowne przypisywanie
 REASSIGNMENT_DISTANCE_THRESHOLD = 150  # Maksymalna odległość w pikselach do ponownego przypisania
 
+# --- NOWOŚĆ: Konfiguracja wczytywania stanu ---
+# Ustawienie klatek do inicjalizacji
+INITIALIZATION_FRAMES = 100
+REASSIGNMENT_DISTANCE_THRESHOLD = 150
+# Odświeżanie pozycji pojazdów na parkingu 
+DB_RELOAD_INTERVAL_FRAMES = 300
+
 # --- Inicjalizacja ---
 detector = YOLO(DETECTION_MODEL_PATH)
 plate_detector = YOLO(DETECTION_MODEL_PLATES_PATH)
@@ -199,8 +206,8 @@ track_history = {}
 track_last_y = {}
 frame_num = 0
 
-# --- NOWOŚĆ: Wczytanie stanu planszy na starcie ---
-known_vehicles_from_db = load_vehicles_from_db()
+# --- NOWOŚĆ: Globalna zmienna do przechowywania wczytanych pojazdów ---
+known_vehicles_from_db = []
 
 # --- Główna pętla programu ---
 while True:
@@ -208,6 +215,11 @@ while True:
     ret_t, frame_t = cap_top.read()
     if not ret_b or not ret_t: break
     frame_num += 1
+    
+    # --- NOWOŚĆ: Okresowe wczytywanie stanu z bazy danych ---
+    if frame_num % DB_RELOAD_INTERVAL_FRAMES == 0:
+        print(f"--- Odświeżanie danych z bazy w klatce {frame_num} ---")
+        known_vehicles_from_db = load_vehicles_from_db()
 
     # Detekcja i przygotowanie danych dla trackera
     rects_for_tracker = []
@@ -226,19 +238,22 @@ while True:
         cx, cy = (l + r_) // 2, (t + b) // 2
 
         # --- NOWOŚĆ: Logika ponownego przypisywania na podstawie stanu z DB ---
-        if frame_num < INITIALIZATION_FRAMES and tid not in track_to_plate and known_vehicles_from_db:
+        # This part will now continuously try to re-assign if a plate isn't known
+        # and a matching known vehicle is nearby from the reloaded DB data.
+        if tid not in track_to_plate and known_vehicles_from_db:
             current_centroid = (cx, cy)
             min_dist = float('inf')
-            best_match = None
+            best_match_index = -1
 
-            for i, known_vehicle in enumerate(known_vehicles_from_db):
+            # Iterate through a *copy* to allow safe removal if a match is made
+            for i, known_vehicle in enumerate(list(known_vehicles_from_db)):
                 dist = sqrt((current_centroid[0] - known_vehicle['centroid'][0])**2 + (current_centroid[1] - known_vehicle['centroid'][1])**2)
                 if dist < min_dist:
                     min_dist = dist
                     best_match_index = i
 
-            if min_dist < REASSIGNMENT_DISTANCE_THRESHOLD:
-                matched_vehicle = known_vehicles_from_db.pop(best_match_index)
+            if min_dist < REASSIGNMENT_DISTANCE_THRESHOLD and best_match_index != -1:
+                matched_vehicle = known_vehicles_from_db.pop(best_match_index) # Remove matched vehicle to avoid re-matching
                 plate = matched_vehicle['plate']
                 track_to_plate[tid] = plate
                 print(f"--- Ponowne przypisanie: Obiekt ID:{tid} to tablica '{plate}' (odległość: {min_dist:.0f}px) ---")
@@ -275,16 +290,28 @@ while True:
                     if y1_b < y2_b and x1_b < x2_b:
                         crop = frame_b[y1_b:y2_b, x1_b:x2_b]
                         if crop.size > 0:
-                            crop_rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
-                            config = '--oem 3 --psm 7 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
-                            raw_text = pytesseract.image_to_string(crop_rgb, lang='eng+pol', config=config)
-                            cv2.imshow("Tablica", crop_rgb)
-                            combined_text = ''.join(re.findall(r'[A-Z0-9]', raw_text.upper()))
+                            # crop_rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
+                            # config = '--oem 3 --psm 7 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+                            # raw_text = pytesseract.image_to_string(crop_rgb, lang='eng+pol', config=config)
+                            # cv2.imshow("Tablica", crop_rgb)
+                            # combined_text = ''.join(re.findall(r'[A-Z0-9]', raw_text.upper()))
                             
-                            if 5 <= len(combined_text) <= 8:
-                                found_plate_this_frame = combined_text
-                                print(f"OCR Znalazł tablicę '{found_plate_this_frame}' dla ID:{tid}.")
-                                break
+                            # if 5 <= len(combined_text) <= 8:
+                            #     found_plate_this_frame = combined_text
+                            #     print(f"OCR Znalazł tablicę '{found_plate_this_frame}' dla ID:{tid}.")
+                            #     break
+                            
+                            crop_rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
+                            result = ocr.readtext(crop_rgb)
+                            cv2.imshow("Tablica", crop_rgb)
+
+                            for (bbox, text, conf) in result:
+                                cleaned_text = ''.join(re.findall(r'[A-Z0-9]', text.upper()))
+                                if 5 <= len(cleaned_text) <= 8:
+                                    found_plate_this_frame = cleaned_text
+                                    print(f"OCR (EasyOCR) znalazł tablicę '{found_plate_this_frame}' dla ID:{tid}.")
+                                    break
+
                 
                 if found_plate_this_frame:
                     track_to_plate[tid] = found_plate_this_frame
