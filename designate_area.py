@@ -2,10 +2,10 @@ import cv2
 import sys
 
 # --- Konfiguracja ---
-ID_KAMERY = 1
+ID_KAMERY = 0
 FRAME_WIDTH = 1920
 FRAME_HEIGHT = 1080
-display_scale = 0.5  # np. 0.5 dla zmniejszenia rozmiaru wyświetlania
+display_scale = 1  # np. 0.5 dla zmniejszenia rozmiaru wyświetlania
 
 # Globalne zmienne
 zones = []

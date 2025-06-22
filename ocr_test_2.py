@@ -5,7 +5,7 @@ import os
 import numpy as np
 
 # Inicjalizacja OCR
-reader = easyocr.Reader(['pl'])
+reader = easyocr.Reader(['en'])
 
 # Foldery
 INPUT_FOLDER = 'zapisane_tablice'
