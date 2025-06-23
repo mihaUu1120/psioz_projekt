@@ -119,14 +119,16 @@ PARKING_OVERLAP_THRESHOLD = 0.2 # Procent pokrycia do uznania miejsca za zajęte
 
 
 ROAD_ZONES = {
-    "ZONE_1": (995, 849, 1231, 1029),
-    "ZONE_2": (994, 359, 1289, 845),
-    "ZONE_3": (550, 358, 994, 537),
-    "ZONE_4": (550, 538, 833, 832),
-    "ZONE_5": (602, 835, 831, 1028)
+    "ROAD_1": (995, 849, 1231, 1029),
+    "ROAD_2": (994, 359, 1289, 845),
+    "ROAD_3": (550, 358, 994, 537),
+    "ROAD_4": (550, 538, 833, 832),
+    "ROAD_5": (602, 835, 831, 1028)
 }
 
-
+# NOWE: Progi pokrycia dla stref drogi i parkingu
+ROAD_OVERLAP_THRESHOLD = 0.90 # 90% pokrycia dla "parkuje"
+PARKED_OVERLAP_THRESHOLD = 0.50 # Na przykład 50% pokrycia dla "zaparkowany"
 
 # --- Ustawienia rozdzielczości kamery ---
 FRAME_WIDTH = 1920
@@ -153,11 +155,11 @@ x1_epdz, y1_epdz, x2_epdz, y2_epdz = EXIT_PLATE_DETECTION_ZONE
 
 # --- NOWOŚĆ: Konfiguracja wczytywania stanu ---
 INITIALIZATION_FRAMES = 100   # Liczba klatek, przez które działa ponowne przypisywanie
-REASSIGNMENT_DISTANCE_THRESHOLD = 150   # Maksymalna odległość w pikselach do ponownego przypisania
+REASSIGNMENT_DISTANCE_THRESHOLD = 200   # Maksymalna odległość w pikselach do ponownego przypisania
 
 # --- NOWOŚĆ: Konfiguracja wczytywania stanu ---
 # Odświeżanie pozycji pojazdów na parkingu 
-DB_RELOAD_INTERVAL_FRAMES = 300
+DB_RELOAD_INTERVAL_FRAMES = 30
 
 # --- Inicjalizacja ---
 detector = YOLO(DETECTION_MODEL_PATH)
@@ -212,7 +214,11 @@ CREATE TABLE IF NOT EXISTS allowed_plates (
 )
 ''')
 
-# Tworzenie nowej tabeli forbidden_moves
+# Upewnij się, że tabela forbidden_moves nie ma UNIQUE na plate_number
+# Możesz tymczasowo usunąć i stworzyć na nowo, jeśli miałeś tam UNIQUE
+# UWAGA: Usunięcie tej linii po pierwszym uruchomieniu jest KLUCZOWE,
+# aby nie tracić danych przy każdym uruchomieniu programu!
+# cursor.execute('DROP TABLE IF EXISTS forbidden_moves')
 cursor.execute('''
 CREATE TABLE IF NOT EXISTS forbidden_moves (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -224,6 +230,7 @@ CREATE TABLE IF NOT EXISTS forbidden_moves (
 
 conn.commit()
 print("Tabela 'plates' jest gotowa.")
+print("Tabela 'forbidden_moves' jest gotowa (upewnij się, że nie ma UNIQUE na plate_number).") # Dodana informacja
 
 def add_entry(plate):
     cursor.execute(
@@ -332,6 +339,10 @@ known_vehicles_from_db = []
 # Będzie przechowywać, czy dany obiekt (po jego ID trackera) aktualnie popełnia dane wykroczenie.
 # np. {object_id: "Zajecie kilku miejsc", ...}
 is_currently_offending = {}
+
+# NOWE: Słownik do śledzenia statusu parkowania/ruchu dla każdego pojazdu
+# np. {object_id: "parkuje", object_id_2: "zaparkowany", ...}
+vehicle_status = {}
 
 
 # --- Główna pętla programu ---
@@ -488,6 +499,9 @@ while True:
                         # Gdy samochód wyjeżdża, upewniamy się, że jego status wykroczenia jest resetowany
                         if tid in is_currently_offending and is_currently_offending[tid] == "Zajecie kilku miejsc":
                             del is_currently_offending[tid]
+                        # NEW: Reset status for parking/road
+                        if tid in vehicle_status:
+                            del vehicle_status[tid]
                         del track_to_plate[tid]
                     if tid in track_entered_zone: 
                         del track_entered_zone[tid]
@@ -523,6 +537,38 @@ while True:
                 print(f"Samochód (ID:{tid}) PRZESTAŁ zajmować dwa miejsca.")
                 del is_currently_offending[tid]
 
+        # --- NOWA LOGIKA: Sprawdzanie statusu "parkuje" / "zaparkowany" ---
+        current_vehicle_status = None
+
+        # Sprawdź, czy pojazd jest w strefie parkowania (zaparkowany)
+        is_parked = False
+        for zone_name, zone_box in PARKING_ZONES.items():
+            if calculate_overlap(vehicle_box, zone_box) >= PARKED_OVERLAP_THRESHOLD:
+                is_parked = True
+                break
+        
+        if is_parked:
+            current_vehicle_status = "zaparkowany"
+        else:
+            # Sprawdź, czy pojazd jest na drodze (parkuje)
+            is_on_road = False
+            for zone_name, zone_box in ROAD_ZONES.items():
+                if calculate_overlap(vehicle_box, zone_box) >= ROAD_OVERLAP_THRESHOLD:
+                    is_on_road = True
+                    break
+            
+            if is_on_road:
+                current_vehicle_status = "parkuje"
+            else:
+                current_vehicle_status = "poza strefami" # Domyślny status, jeśli nie jest ani na drodze, ani zaparkowany
+
+
+        # Wyświetl status w konsoli tylko, jeśli się zmienił
+        if vehicle_status.get(tid) != current_vehicle_status:
+            plate_info = track_to_plate.get(tid, f"ID:{tid}")
+            print(f"Samochód {plate_info} zmienił status na: {current_vehicle_status}")
+            vehicle_status[tid] = current_vehicle_status
+
 
         # Aktualizacja pozycji w bazie, jeśli tablica jest znana
         if tid in track_to_plate:
@@ -531,9 +577,27 @@ while True:
 
         # --- Rysowanie na klatce (górnej) ---
         label_text = track_to_plate.get(tid, f"ID:{tid}")
-        color = (0, 255, 0) if tid in track_to_plate else (0, 0, 255)
+        
+        # Zmieniamy kolor boxa w zależności od statusu (opcjonalnie)
+        if tid in vehicle_status:
+            if vehicle_status[tid] == "zaparkowany":
+                color = (255, 255, 0) # Cyjan dla zaparkowanego
+            elif vehicle_status[tid] == "parkuje":
+                color = (0, 165, 255) # Pomarańczowy dla parkującego (na drodze)
+            else:
+                color = (0, 255, 0) if tid in track_to_plate else (0, 0, 255) # Domyślny
+        else:
+            color = (0, 255, 0) if tid in track_to_plate else (0, 0, 255) # Domyślny
+            
         cv2.rectangle(frame_t, (l, t), (r_, b), color, 2)
         cv2.putText(frame_t, label_text, (l, t - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+        
+        # Dodajemy status do etykiety na ekranie
+        if tid in vehicle_status:
+            status_on_screen = vehicle_status[tid]
+            cv2.putText(frame_t, status_on_screen, (l, b + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+
+
         if tid in track_history:
             pts = track_history[tid]
             for i in range(1, len(pts)):
@@ -546,6 +610,11 @@ while True:
             color = (0, 0, 255) # Zmieniamy na czerwony, jeśli zajęte
         cv2.rectangle(frame_t, (x1, y1), (x2, y2), color, 2) 
         cv2.putText(frame_t, zone_name.replace("ZONE_", "Strefa "), (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
+
+    # --- NOWE: Rysowanie stref drogowych (na klatce górnej) ---
+    for zone_name, (x1, y1, x2, y2) in ROAD_ZONES.items():
+        cv2.rectangle(frame_t, (x1, y1), (x2, y2), (255, 0, 255), 2) # Fioletowy kolor dla dróg
+        cv2.putText(frame_t, zone_name.replace("ROAD_", "Droga "), (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255), 1)
 
     # Rysowanie strefy wjazdu i wyjazdu (na klatce górnej)
     cv2.rectangle(frame_t, (x1_ep, y1_ep), (x2_ep, y2_ep), (255, 0, 0), 2)
