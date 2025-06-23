@@ -95,7 +95,7 @@ DETECTION_MODEL_PATH = "best_dziala_90.pt"
 DETECTION_MODEL_PLATES_PATH = "best_plates.pt"
 VIDEO_SOURCE_BOTTOM = 2
 VIDEO_SOURCE_TOP = 0
-VIDEO_SOURCE_EXIT = 1  # NOWOŚĆ: Kamera wyjazdowa
+VIDEO_SOURCE_EXIT = 1   # NOWOŚĆ: Kamera wyjazdowa
 TARGET_CLASS = "car"
 PLATE_TARGET_CLASS = "plate"
 CONFIDENCE_THRESHOLD = 0.50
@@ -115,7 +115,7 @@ PARKING_ZONES = {
     "ZONE_10": (224, 671, 499, 803)
 }
 TOTAL_PARKING_SPOTS = len(PARKING_ZONES) # Łączna liczba miejsc parkingowych
-PARKING_OVERLAP_THRESHOLD = 0.60 # Procent pokrycia do uznania miejsca za zajęte
+PARKING_OVERLAP_THRESHOLD = 0.2 # Procent pokrycia do uznania miejsca za zajęte
 
 # --- Ustawienia rozdzielczości kamery ---
 FRAME_WIDTH = 1920
@@ -141,8 +141,8 @@ x1_epdz, y1_epdz, x2_epdz, y2_epdz = EXIT_PLATE_DETECTION_ZONE
 
 
 # --- NOWOŚĆ: Konfiguracja wczytywania stanu ---
-INITIALIZATION_FRAMES = 100  # Liczba klatek, przez które działa ponowne przypisywanie
-REASSIGNMENT_DISTANCE_THRESHOLD = 150  # Maksymalna odległość w pikselach do ponownego przypisania
+INITIALIZATION_FRAMES = 100   # Liczba klatek, przez które działa ponowne przypisywanie
+REASSIGNMENT_DISTANCE_THRESHOLD = 150   # Maksymalna odległość w pikselach do ponownego przypisania
 
 # --- NOWOŚĆ: Konfiguracja wczytywania stanu ---
 # Odświeżanie pozycji pojazdów na parkingu 
@@ -204,9 +204,10 @@ CREATE TABLE IF NOT EXISTS allowed_plates (
 # Tworzenie nowej tabeli forbidden_moves
 cursor.execute('''
 CREATE TABLE IF NOT EXISTS forbidden_moves (
-    plate_number TEXT PRIMARY KEY,
-    forbidden_time TIMESTAMP,
-    type TEXT
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    plate_number TEXT NOT NULL,
+    forbidden_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    type TEXT NOT NULL
 )
 ''')
 
@@ -269,6 +270,12 @@ def update_plate_position(plate, x1, y1, x2, y2):
         WHERE plate_number = ?
     ''', (x1, y1, x2, y2, plate))
     conn.commit()
+    
+def add_forbidden_moves(plate, type):
+    cursor.execute(
+        "INSERT INTO forbidden_moves (plate_number, forbidden_time, type) VALUES (?, CURRENT_TIMESTAMP, ?)",
+        (plate, type))
+    conn.commit()
 
 # --- NOWOŚĆ: Funkcja do wczytywania stanu z bazy ---
 def load_vehicles_from_db():
@@ -310,8 +317,11 @@ frame_num = 0
 # --- NOWOŚĆ: Globalna zmienna do przechowywania wczytanych pojazdów ---
 known_vehicles_from_db = []
 
-# add_allowed_plate_to_db("8008")
-# add_allowed_plate_to_db("7007")
+# --- NOWOŚĆ: Słownik do śledzenia aktualnego statusu wykroczeń (ID śledzenia -> typ wykroczenia) ---
+# Będzie przechowywać, czy dany obiekt (po jego ID trackera) aktualnie popełnia dane wykroczenie.
+# np. {object_id: "Zajecie kilku miejsc", ...}
+is_currently_offending = {}
+
 
 # --- Główna pętla programu ---
 while True:
@@ -319,8 +329,8 @@ while True:
     ret_t, frame_t = cap_top.read()
     ret_e, frame_e = cap_exit.read() # NOWOŚĆ: Wczytaj klatkę z kamery wyjazdowej
 
-    if not ret_b or not ret_t or not ret_e: # NOWOŚĆ: Sprawdź wszystkie klatki
-        print("Nie można odczytać klatki z jednej z kamer. Kończenie programu.")
+    if not ret_b or not ret_t or not ret_e: # NOWOŚĆ: Sprawdź wszystkie kamery
+        print("Błąd: Nie można odczytać klatki z jednej z kamer. Kończenie programu.")
         break
     frame_num += 1
     
@@ -342,6 +352,9 @@ while True:
 
     # Inicjalizuj zbiór zajętych miejsc parkingowych w tej klatce
     occupied_parking_zones = set()
+
+    # Zbiór ID obiektów, które w tej klatce popełniły wykroczenie
+    offending_objects_this_frame = set()
 
     # Iteracja po śledzonych obiektach
     for tid, box in tracked_objects.items():
@@ -461,6 +474,9 @@ while True:
                     update_exit(found_plate_this_frame_exit) 
                     print(f"Usunięto tablicę '{found_plate_this_frame_exit}' z bazy 'plates' (wyjazd).")
                     if tid in track_to_plate: 
+                        # Gdy samochód wyjeżdża, upewniamy się, że jego status wykroczenia jest resetowany
+                        if tid in is_currently_offending and is_currently_offending[tid] == "Zajecie kilku miejsc":
+                            del is_currently_offending[tid]
                         del track_to_plate[tid]
                     if tid in track_entered_zone: 
                         del track_entered_zone[tid]
@@ -469,11 +485,32 @@ while True:
 
 
         # --- Sprawdzanie zajętości miejsc parkingowych ---
+        occupied_zones_by_vehicle = set()
+        count = 0
         for zone_name, zone_box in PARKING_ZONES.items():
             if calculate_overlap(vehicle_box, zone_box) >= PARKING_OVERLAP_THRESHOLD:
                 occupied_parking_zones.add(zone_name)
-                # Możesz opcjonalnie wyświetlić, która strefa jest zajęta przez który pojazd
-                # print(f"Pojazd ID:{tid} zajmuje strefę {zone_name}")
+                occupied_zones_by_vehicle.add(zone_name)
+                count += 1
+
+        offense_type = "Zajecie kilku miejsc"
+        if count >= 2: # Warunek na zajęcie wielu miejsc
+            if tid in track_to_plate:
+                plate = track_to_plate[tid]
+                # Sprawdź, czy samochód już nie jest oznaczony jako popełniający to wykroczenie
+                if tid not in is_currently_offending or is_currently_offending[tid] != offense_type:
+                    print(f"Samochód {plate} (ID:{tid}) ZACZĄŁ zajmować dwa miejsca. Zapisuję wykroczenie.")
+                    add_forbidden_moves(plate, offense_type)
+                    # Oznacz samochód jako aktualnie popełniający wykroczenie
+                    is_currently_offending[tid] = offense_type
+            else:
+                # Obsługa przypadku, gdy tablica nie jest jeszcze zidentyfikowana
+                print(f"Niezidentyfikowany samochód (ID:{tid}) zajmuje dwa miejsca.")
+        else: # Jeśli samochód nie zajmuje wielu miejsc
+            # Jeśli wcześniej był oznaczony jako popełniający to wykroczenie, resetujemy status
+            if tid in is_currently_offending and is_currently_offending[tid] == offense_type:
+                print(f"Samochód (ID:{tid}) PRZESTAŁ zajmować dwa miejsca.")
+                del is_currently_offending[tid]
 
 
         # Aktualizacja pozycji w bazie, jeśli tablica jest znana
@@ -516,7 +553,7 @@ while True:
         cv2.putText(frame_t, init_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
 
     # --- Kolor światła wjazdowego ---
-    entry_light_color = (0, 0, 255)  # domyślnie czerwony
+    entry_light_color = (0, 0, 255)   # domyślnie czerwony
 
     # Sprawdź, czy jakikolwiek dozwolony pojazd znajduje się w strefie ENTRYPOINT
     any_allowed_in_entry = False
