@@ -117,6 +117,17 @@ PARKING_ZONES = {
 TOTAL_PARKING_SPOTS = len(PARKING_ZONES) # Łączna liczba miejsc parkingowych
 PARKING_OVERLAP_THRESHOLD = 0.2 # Procent pokrycia do uznania miejsca za zajęte
 
+
+ROAD_ZONES = {
+    "ZONE_1": (995, 849, 1231, 1029),
+    "ZONE_2": (994, 359, 1289, 845),
+    "ZONE_3": (550, 358, 994, 537),
+    "ZONE_4": (550, 538, 833, 832),
+    "ZONE_5": (602, 835, 831, 1028)
+}
+
+
+
 # --- Ustawienia rozdzielczości kamery ---
 FRAME_WIDTH = 1920
 FRAME_HEIGHT = 1080
