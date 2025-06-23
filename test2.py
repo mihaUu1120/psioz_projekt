@@ -151,11 +151,12 @@ x1_exgl, y1_exgl, x2_exgl, y2_exgl = EXIT_GATE_LIGHT
 EXIT_PLATE_DETECTION_ZONE = (0, 0, FRAME_WIDTH, FRAME_HEIGHT) # Może być cały kadr lub określony ROI
 x1_epdz, y1_epdz, x2_epdz, y2_epdz = EXIT_PLATE_DETECTION_ZONE
 
-
+# --- NOWE: Próg pokrycia dla kolizji ---
+COLLISION_OVERLAP_THRESHOLD = 0.10 # 10% pokrycia do uznania kolizji
 
 # --- NOWOŚĆ: Konfiguracja wczytywania stanu ---
-INITIALIZATION_FRAMES = 100   # Liczba klatek, przez które działa ponowne przypisywanie
-REASSIGNMENT_DISTANCE_THRESHOLD = 200   # Maksymalna odległość w pikselach do ponownego przypisania
+INITIALIZATION_FRAMES = 100    # Liczba klatek, przez które działa ponowne przypisywanie
+REASSIGNMENT_DISTANCE_THRESHOLD = 200    # Maksymalna odległość w pikselach do ponownego przypisania
 
 # --- NOWOŚĆ: Konfiguracja wczytywania stanu ---
 # Odświeżanie pozycji pojazdów na parkingu 
@@ -377,6 +378,9 @@ while True:
 
     # Zbiór ID obiektów, które w tej klatce popełniły wykroczenie
     offending_objects_this_frame = set()
+    
+    # Słownik do śledzenia kolizji w bieżącej klatce
+    collisions_this_frame = {} # {(tid1, tid2): True, ...}
 
     # Iteracja po śledzonych obiektach
     for tid, box in tracked_objects.items():
@@ -518,24 +522,60 @@ while True:
                 occupied_zones_by_vehicle.add(zone_name)
                 count += 1
 
-        offense_type = "Zajecie kilku miejsc"
+        offense_type_parking = "Zajecie kilku miejsc"
         if count >= 2: # Warunek na zajęcie wielu miejsc
             if tid in track_to_plate:
                 plate = track_to_plate[tid]
                 # Sprawdź, czy samochód już nie jest oznaczony jako popełniający to wykroczenie
-                if tid not in is_currently_offending or is_currently_offending[tid] != offense_type:
+                if tid not in is_currently_offending or is_currently_offending[tid] != offense_type_parking:
                     print(f"Samochód {plate} (ID:{tid}) ZACZĄŁ zajmować dwa miejsca. Zapisuję wykroczenie.")
-                    add_forbidden_moves(plate, offense_type)
+                    add_forbidden_moves(plate, offense_type_parking)
                     # Oznacz samochód jako aktualnie popełniający wykroczenie
-                    is_currently_offending[tid] = offense_type
+                    is_currently_offending[tid] = offense_type_parking
             else:
                 # Obsługa przypadku, gdy tablica nie jest jeszcze zidentyfikowana
                 print(f"Niezidentyfikowany samochód (ID:{tid}) zajmuje dwa miejsca.")
         else: # Jeśli samochód nie zajmuje wielu miejsc
             # Jeśli wcześniej był oznaczony jako popełniający to wykroczenie, resetujemy status
-            if tid in is_currently_offending and is_currently_offending[tid] == offense_type:
+            if tid in is_currently_offending and is_currently_offending[tid] == offense_type_parking:
                 print(f"Samochód (ID:{tid}) PRZESTAŁ zajmować dwa miejsca.")
                 del is_currently_offending[tid]
+
+        # --- NOWA LOGIKA: Sprawdzanie kolizji między pojazdami ---
+        offense_type_collision = "Kolizja"
+        colliding_with_ids = []
+        for other_tid, other_box in tracked_objects.items():
+            if tid == other_tid:
+                continue # Nie sprawdzaj kolizji z samym sobą
+
+            # Aby uniknąć duplikacji (A z B i B z A) i nadpisywania, zawsze sprawdzaj mniejszy ID z większym
+            if tid < other_tid:
+                # Oblicz pokrycie drugiego boxa względem pierwszego
+                overlap1_2 = calculate_overlap(vehicle_box, other_box)
+                # Oblicz pokrycie pierwszego boxa względem drugiego
+                overlap2_1 = calculate_overlap(other_box, vehicle_box)
+
+                if overlap1_2 >= COLLISION_OVERLAP_THRESHOLD or overlap2_1 >= COLLISION_OVERLAP_THRESHOLD:
+                    colliding_with_ids.append(other_tid)
+                    # Zapisz kolizję dla pary (posortowane ID, żeby unikalne były)
+                    collision_pair = tuple(sorted((tid, other_tid)))
+                    collisions_this_frame[collision_pair] = True
+        
+        # Obsługa stanu kolizji dla danego pojazdu
+        if colliding_with_ids:
+            if tid in track_to_plate:
+                plate = track_to_plate[tid]
+                if tid not in is_currently_offending or is_currently_offending[tid] != offense_type_collision:
+                    print(f"Samochód {plate} (ID:{tid}) ZACZĄŁ kolizję z ID:{colliding_with_ids}. Zapisuję wykroczenie.")
+                    add_forbidden_moves(plate, offense_type_collision)
+                    is_currently_offending[tid] = offense_type_collision
+            else:
+                print(f"Niezidentyfikowany samochód (ID:{tid}) ZACZĄŁ kolizję z ID:{colliding_with_ids}.")
+        else:
+            if tid in is_currently_offending and is_currently_offending[tid] == offense_type_collision:
+                print(f"Samochód (ID:{tid}) PRZESTAŁ kolizję.")
+                del is_currently_offending[tid]
+
 
         # --- NOWA LOGIKA: Sprawdzanie statusu "parkuje" / "zaparkowany" ---
         current_vehicle_status = None
@@ -589,6 +629,11 @@ while True:
         else:
             color = (0, 255, 0) if tid in track_to_plate else (0, 0, 255) # Domyślny
             
+        # Zmień kolor na czerwony, jeśli pojazd jest w kolizji
+        if tid in is_currently_offending and is_currently_offending[tid] == offense_type_collision:
+            color = (0, 0, 255) # Czerwony dla kolizji
+            cv2.putText(frame_t, "KOLIZJA", (l, t + (b-t)//2), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 3)
+
         cv2.rectangle(frame_t, (l, t), (r_, b), color, 2)
         cv2.putText(frame_t, label_text, (l, t - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
         
@@ -633,7 +678,7 @@ while True:
         cv2.putText(frame_t, init_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
 
     # --- Kolor światła wjazdowego ---
-    entry_light_color = (0, 0, 255)   # domyślnie czerwony
+    entry_light_color = (0, 0, 255)    # domyślnie czerwony
 
     # Sprawdź, czy jakikolwiek dozwolony pojazd znajduje się w strefie ENTRYPOINT
     any_allowed_in_entry = False
