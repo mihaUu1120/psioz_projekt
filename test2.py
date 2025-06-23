@@ -95,7 +95,7 @@ DETECTION_MODEL_PATH = "best_dziala_90.pt"
 DETECTION_MODEL_PLATES_PATH = "best_plates.pt"
 VIDEO_SOURCE_BOTTOM = 2
 VIDEO_SOURCE_TOP = 0
-VIDEO_SOURCE_EXIT = 1   # NOWOŚĆ: Kamera wyjazdowa
+VIDEO_SOURCE_EXIT = 1    # NOWOŚĆ: Kamera wyjazdowa
 TARGET_CLASS = "car"
 PLATE_TARGET_CLASS = "plate"
 CONFIDENCE_THRESHOLD = 0.50
@@ -115,6 +115,7 @@ PARKING_ZONES = {
     "ZONE_10": (224, 671, 499, 803)
 }
 TOTAL_PARKING_SPOTS = len(PARKING_ZONES) # Łączna liczba miejsc parkingowych
+# TOTAL_PARKING_SPOTS = 1
 PARKING_OVERLAP_THRESHOLD = 0.2 # Procent pokrycia do uznania miejsca za zajęte
 
 
@@ -691,9 +692,15 @@ while True:
                     any_allowed_in_entry = True
                     break
 
-    # Jeśli jest pojazd dozwolony w strefie — zielone światło, inaczej czerwone
-    if any_allowed_in_entry:
+    # --- NOWA LOGIKA: Sprawdzenie dostępności miejsc parkingowych ---
+    # Zliczamy zajęte miejsca parkingowe na podstawie `occupied_parking_zones`
+    current_occupied_spots = len(occupied_parking_zones)
+
+    # Jeśli jest pojazd dozwolony w strefie Wjazdu I są wolne miejsca — zielone światło, inaczej czerwone
+    if any_allowed_in_entry and current_occupied_spots < TOTAL_PARKING_SPOTS:
         entry_light_color = (0, 255, 0)
+    else:
+        entry_light_color = (0, 0, 255) # Czerwone, jeśli nieuprawniony LUB brak miejsc
 
     # Rysuj prostokąt ENTRY_GATE_LIGHT
     cv2.rectangle(frame_t, (x1_engl, y1_engl), (x2_engl, y2_engl), entry_light_color, -1)
