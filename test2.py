@@ -6,7 +6,7 @@ from ultralytics import YOLO
 import pytesseract
 import re
 from math import sqrt
-import time # Dodano dla timestamp
+import time
 
 # --- Konfiguracja Tesseract ---
 # pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe" # Zakomentowane, ponieważ w środowisku Canvas może nie być potrzebne lub ścieżka będzie inna
@@ -91,11 +91,11 @@ class CentroidTracker:
         return self.boxes
 
 # --- Konfiguracja ---
-DETECTION_MODEL_PATH = "best_dziala_90.pt"
+DETECTION_MODEL_PATH = "best_dziala_najlepiej.pt"
 DETECTION_MODEL_PLATES_PATH = "best_plates.pt"
 VIDEO_SOURCE_BOTTOM = 2
 VIDEO_SOURCE_TOP = 0
-VIDEO_SOURCE_EXIT = 1    # NOWOŚĆ: Kamera wyjazdowa
+VIDEO_SOURCE_EXIT = 1
 TARGET_CLASS = "car"
 PLATE_TARGET_CLASS = "plate"
 CONFIDENCE_THRESHOLD = 0.50
@@ -114,10 +114,8 @@ PARKING_ZONES = {
     "ZONE_9": (235, 524, 509, 650),
     "ZONE_10": (224, 671, 499, 803)
 }
-TOTAL_PARKING_SPOTS = len(PARKING_ZONES) # Łączna liczba miejsc parkingowych
-# TOTAL_PARKING_SPOTS = 1
-PARKING_OVERLAP_THRESHOLD = 0.2 # Procent pokrycia do uznania miejsca za zajęte
-
+TOTAL_PARKING_SPOTS = len(PARKING_ZONES)
+PARKING_OVERLAP_THRESHOLD = 0.2
 
 ROAD_ZONES = {
     "ROAD_1": (995, 849, 1231, 1029),
@@ -127,9 +125,8 @@ ROAD_ZONES = {
     "ROAD_5": (602, 835, 831, 1028)
 }
 
-# NOWE: Progi pokrycia dla stref drogi i parkingu
-ROAD_OVERLAP_THRESHOLD = 0.90 # 90% pokrycia dla "parkuje"
-PARKED_OVERLAP_THRESHOLD = 0.50 # Na przykład 50% pokrycia dla "zaparkowany"
+ROAD_OVERLAP_THRESHOLD = 0.90
+PARKED_OVERLAP_THRESHOLD = 0.50
 
 # --- Ustawienia rozdzielczości kamery ---
 FRAME_WIDTH = 1920
@@ -143,24 +140,23 @@ ENTRY_GATE_LIGHT = (1230, 845, 1248, 1023)
 x1_engl, y1_engl, x2_engl, y2_engl = ENTRY_GATE_LIGHT
 
 # --- Konfiguracja Exitpoint (dla kamery górnej) ---
-EXITPOINT_ZONE = (198, 842, 534, 989) # Ta strefa nadal służy do detekcji pojazdu z góry
+EXITPOINT_ZONE = (198, 842, 534, 989)
 x1_exp, y1_exp, x2_exp, y2_exp = EXITPOINT_ZONE
 EXIT_GATE_LIGHT = (188, 825, 199, 993)
 x1_exgl, y1_exgl, x2_exgl, y2_exgl = EXIT_GATE_LIGHT
 
-# --- NOWOŚĆ: Konfiguracja strefy detekcji tablicy dla kamery wyjazdowej ---
-EXIT_PLATE_DETECTION_ZONE = (0, 0, FRAME_WIDTH, FRAME_HEIGHT) # Może być cały kadr lub określony ROI
+# --- Konfiguracja strefy detekcji tablicy dla kamery wyjazdowej ---
+EXIT_PLATE_DETECTION_ZONE = (0, 0, FRAME_WIDTH, FRAME_HEIGHT)
 x1_epdz, y1_epdz, x2_epdz, y2_epdz = EXIT_PLATE_DETECTION_ZONE
 
-# --- NOWE: Próg pokrycia dla kolizji ---
-COLLISION_OVERLAP_THRESHOLD = 0.10 # 10% pokrycia do uznania kolizji
+# --- Próg pokrycia dla kolizji ---
+COLLISION_OVERLAP_THRESHOLD = 0.10
 
-# --- NOWOŚĆ: Konfiguracja wczytywania stanu ---
-INITIALIZATION_FRAMES = 100    # Liczba klatek, przez które działa ponowne przypisywanie
-REASSIGNMENT_DISTANCE_THRESHOLD = 200    # Maksymalna odległość w pikselach do ponownego przypisania
+# --- Konfiguracja wczytywania stanu ---
+INITIALIZATION_FRAMES = 100
+REASSIGNMENT_DISTANCE_THRESHOLD = 200
 
-# --- NOWOŚĆ: Konfiguracja wczytywania stanu ---
-# Odświeżanie pozycji pojazdów na parkingu 
+# --- Konfiguracja odświeżania bazy ---
 DB_RELOAD_INTERVAL_FRAMES = 30
 
 # --- Inicjalizacja ---
@@ -172,16 +168,16 @@ tracker = CentroidTracker(max_disappeared=50)
 # --- Otwórz kamery ---
 cap_bot = cv2.VideoCapture(VIDEO_SOURCE_BOTTOM)
 cap_top = cv2.VideoCapture(VIDEO_SOURCE_TOP)
-cap_exit = cv2.VideoCapture(VIDEO_SOURCE_EXIT) # NOWOŚĆ: Otwórz kamerę wyjazdową
+cap_exit = cv2.VideoCapture(VIDEO_SOURCE_EXIT)
 
 cap_bot.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
 cap_bot.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
 cap_top.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
 cap_top.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
-cap_exit.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH) # NOWOŚĆ: Ustaw rozdzielczość kamery wyjazdowej
-cap_exit.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT) # NOWOŚĆ: Ustaw rozdzielczość kamery wyjazdowej
+cap_exit.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
+cap_exit.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
 
-if not cap_bot.isOpened() or not cap_top.isOpened() or not cap_exit.isOpened(): # NOWOŚĆ: Sprawdź wszystkie kamery
+if not cap_bot.isOpened() or not cap_top.isOpened() or not cap_exit.isOpened():
     print("Błąd: Nie można otworzyć jednej z kamer.")
     exit()
 
@@ -198,8 +194,6 @@ CREATE TABLE IF NOT EXISTS plates (
     last_update TEXT DEFAULT CURRENT_TIMESTAMP
 )
 ''')
-
-# Tworzenie nowej tabeli entries_exits
 cursor.execute('''
 CREATE TABLE IF NOT EXISTS entries_exits (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -208,19 +202,11 @@ CREATE TABLE IF NOT EXISTS entries_exits (
     exit_time TIMESTAMP
 )
 ''')
-
-# Tworzenie nowej tabeli allowed_plates
 cursor.execute('''
 CREATE TABLE IF NOT EXISTS allowed_plates (
     plate_number TEXT PRIMARY KEY
 )
 ''')
-
-# Upewnij się, że tabela forbidden_moves nie ma UNIQUE na plate_number
-# Możesz tymczasowo usunąć i stworzyć na nowo, jeśli miałeś tam UNIQUE
-# UWAGA: Usunięcie tej linii po pierwszym uruchomieniu jest KLUCZOWE,
-# aby nie tracić danych przy każdym uruchomieniu programu!
-# cursor.execute('DROP TABLE IF EXISTS forbidden_moves')
 cursor.execute('''
 CREATE TABLE IF NOT EXISTS forbidden_moves (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -229,10 +215,8 @@ CREATE TABLE IF NOT EXISTS forbidden_moves (
     type TEXT NOT NULL
 )
 ''')
-
 conn.commit()
-print("Tabela 'plates' jest gotowa.")
-print("Tabela 'forbidden_moves' jest gotowa (upewnij się, że nie ma UNIQUE na plate_number).") # Dodana informacja
+print("Tabele w bazie danych są gotowe.")
 
 def add_entry(plate):
     cursor.execute(
@@ -252,12 +236,12 @@ def update_exit(plate):
 
 def add_allowed_plate_to_db(plate):
     cursor.execute(
-        "INSERT INTO allowed_plates (plate_number) VALUES (?)",
+        "INSERT OR IGNORE INTO allowed_plates (plate_number) VALUES (?)",
         (plate,)
     )
     conn.commit()
     print(f"Dodano dozwoloną tablicę '{plate}' do bazy danych.")
-    
+
 def is_alowed_plate_in_db(plate):
     cursor.execute("SELECT 1 FROM allowed_plates WHERE plate_number = ?", (plate,))
     return cursor.fetchone() is not None
@@ -273,12 +257,12 @@ def add_plate_to_db(plate, x1, y1, x2, y2):
             (plate, x1, y1, x2, y2)
         )
         conn.commit()
-    print(f"Dodano tablicę '{plate}' do bazy danych.")
-        
+        print(f"Dodano tablicę '{plate}' do bazy danych.")
+
 def delete_plate_from_db(plate):
     if is_plate_in_db(plate):
         cursor.execute(
-            "DELETE FROM plates WHERE plate_number = ?", 
+            "DELETE FROM plates WHERE plate_number = ?",
             (plate,)
         )
         conn.commit()
@@ -290,16 +274,14 @@ def update_plate_position(plate, x1, y1, x2, y2):
         WHERE plate_number = ?
     ''', (x1, y1, x2, y2, plate))
     conn.commit()
-    
+
 def add_forbidden_moves(plate, type):
     cursor.execute(
         "INSERT INTO forbidden_moves (plate_number, forbidden_time, type) VALUES (?, CURRENT_TIMESTAMP, ?)",
         (plate, type))
     conn.commit()
 
-# --- NOWOŚĆ: Funkcja do wczytywania stanu z bazy ---
 def load_vehicles_from_db():
-    """Wczytuje zapisane pojazdy i ich ostatnie pozycje (jako centroidy) z bazy danych."""
     cursor.execute("SELECT plate_number, x1, y1, x2, y2 FROM plates")
     known_vehicles = []
     for row in cursor.fetchall():
@@ -311,7 +293,6 @@ def load_vehicles_from_db():
     return known_vehicles
 
 def calculate_overlap(box1, box2):
-    """Calculates the Intersection over Area (IoA) of box1 with box2."""
     x1_inter = max(box1[0], box2[0])
     y1_inter = max(box1[1], box2[1])
     x2_inter = min(box1[2], box2[2])
@@ -322,48 +303,37 @@ def calculate_overlap(box1, box2):
     intersection_area = inter_width * inter_height
 
     box1_area = (box1[2] - box1[0]) * (box1[3] - box1[1])
-    # box2_area = (box2[2] - box2[0]) * (box2[3] - box2[1]) # Niepotrzebne dla IoA
-
     return intersection_area / box1_area if box1_area > 0 else 0
 
-
-# --- Bufor tablic i danych śledzenia ---
+# --- Bufory i zmienne stanu ---
 track_to_plate = {}
-track_entered_zone = {} # True if vehicle entered entry zone, for one-time OCR
+track_entered_zone = {}
 track_history = {}
 track_last_y = {}
 frame_num = 0
-
-# --- NOWOŚĆ: Globalna zmienna do przechowywania wczytanych pojazdów ---
 known_vehicles_from_db = []
-
-# --- NOWOŚĆ: Słownik do śledzenia aktualnego statusu wykroczeń (ID śledzenia -> typ wykroczenia) ---
-# Będzie przechowywać, czy dany obiekt (po jego ID trackera) aktualnie popełnia dane wykroczenie.
-# np. {object_id: "Zajecie kilku miejsc", ...}
 is_currently_offending = {}
-
-# NOWE: Słownik do śledzenia statusu parkowania/ruchu dla każdego pojazdu
-# np. {object_id: "parkuje", object_id_2: "zaparkowany", ...}
 vehicle_status = {}
 
+# --- Konfiguracja i zmienne timera bramki wjazdowej ---
+GATE_TIMEOUT = 10
+gate_opened_time = None
 
 # --- Główna pętla programu ---
 while True:
     ret_b, frame_b = cap_bot.read()
     ret_t, frame_t = cap_top.read()
-    ret_e, frame_e = cap_exit.read() # NOWOŚĆ: Wczytaj klatkę z kamery wyjazdowej
+    ret_e, frame_e = cap_exit.read()
 
-    if not ret_b or not ret_t or not ret_e: # NOWOŚĆ: Sprawdź wszystkie kamery
+    if not ret_b or not ret_t or not ret_e:
         print("Błąd: Nie można odczytać klatki z jednej z kamer. Kończenie programu.")
         break
     frame_num += 1
-    
-    # --- NOWOŚĆ: Okresowe wczytywanie stanu z bazy danych ---
+
     if frame_num % DB_RELOAD_INTERVAL_FRAMES == 0:
         print(f"--- Odświeżanie danych z bazy w klatce {frame_num} ---")
         known_vehicles_from_db = load_vehicles_from_db()
 
-    # Detekcja i przygotowanie danych dla trackera (dla kamery górnej)
     rects_for_tracker = []
     results_t = detector(frame_t, imgsz=640, verbose=False)[0]
     for r in results_t.boxes:
@@ -373,148 +343,103 @@ while True:
             rects_for_tracker.append((x1, y1, x2, y2))
 
     tracked_objects = tracker.update(rects_for_tracker)
-
-    # Inicjalizuj zbiór zajętych miejsc parkingowych w tej klatce
     occupied_parking_zones = set()
+    collisions_this_frame = {}
 
-    # Zbiór ID obiektów, które w tej klatce popełniły wykroczenie
-    offending_objects_this_frame = set()
-    
-    # Słownik do śledzenia kolizji w bieżącej klatce
-    collisions_this_frame = {} # {(tid1, tid2): True, ...}
-
-    # Iteracja po śledzonych obiektach
     for tid, box in tracked_objects.items():
         l, t, r_, b = map(int, box)
         cx, cy = (l + r_) // 2, (t + b) // 2
         vehicle_box = (l, t, r_, b)
 
-        # --- Logika ponownego przypisywania na podstawie stanu z DB ---
         if tid not in track_to_plate and known_vehicles_from_db:
             current_centroid = (cx, cy)
             min_dist = float('inf')
             best_match_index = -1
-
             for i, known_vehicle in enumerate(list(known_vehicles_from_db)):
                 dist = sqrt((current_centroid[0] - known_vehicle['centroid'][0])**2 + (current_centroid[1] - known_vehicle['centroid'][1])**2)
                 if dist < min_dist:
                     min_dist = dist
                     best_match_index = i
-
             if min_dist < REASSIGNMENT_DISTANCE_THRESHOLD and best_match_index != -1:
-                matched_vehicle = known_vehicles_from_db.pop(best_match_index) 
+                matched_vehicle = known_vehicles_from_db.pop(best_match_index)
                 plate = matched_vehicle['plate']
                 track_to_plate[tid] = plate
                 print(f"--- Ponowne przypisanie: Obiekt ID:{tid} to tablica '{plate}' (odległość: {min_dist:.0f}px) ---")
-
-        # --- Logika kierunku i trajektorii ---
-        direction = "S"
-        if tid in track_last_y:
-            if cy < track_last_y[tid] - 5: direction = "F"
-            elif cy > track_last_y[tid] + 5: direction = "B"
-        track_last_y[tid] = cy
 
         if tid not in track_history: track_history[tid] = []
         track_history[tid].append((cx, cy))
         track_history[tid] = track_history[tid][-50:]
 
-        # --- Logika strefy wjazdowej i OCR (z kamery dolnej) ---
         overlap_ratio_entry = calculate_overlap(vehicle_box, ENTRYPOINT_ZONE)
-        
         if not track_entered_zone.get(tid, False) and overlap_ratio_entry >= OVERLAP_THRESHOLD:
             track_entered_zone[tid] = True
-            if tid not in track_to_plate: 
+            if tid not in track_to_plate:
                 print(f"Pojazd ID:{tid} wjechał w strefę. Rozpoczynam odczyt OCR z kamery dolnej.")
-                
                 results_b = plate_detector(frame_b, imgsz=640, verbose=False)[0]
                 found_plate_this_frame = None
                 for r_b in results_b.boxes:
                     if float(r_b.conf[0]) < PLATE_CONFIDENCE_THRESHOLD: continue
                     if plate_detector.names[int(r_b.cls[0])] != PLATE_TARGET_CLASS: continue
-
                     x1_b, y1_b, x2_b, y2_b = map(int, r_b.xyxy[0])
                     if y1_b < y2_b and x1_b < x2_b:
                         crop = frame_b[y1_b:y2_b, x1_b:x2_b]
                         if crop.size > 0:
                             crop_rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
                             result = ocr.readtext(crop_rgb)
-                            cv2.imshow("Tablica wjazdowa", crop_rgb) # Zmieniona nazwa okna
-
+                            cv2.imshow("Tablica wjazdowa", crop_rgb)
                             for (bbox, text, conf) in result:
                                 cleaned_text = ''.join(re.findall(r'[A-Z0-9]', text.upper()))
                                 if 4 <= len(cleaned_text) <= 8:
                                     if is_alowed_plate_in_db(cleaned_text):
                                         found_plate_this_frame = cleaned_text
                                         print(f"OCR (EasyOCR) znalazł tablicę '{found_plate_this_frame}' dla ID:{tid}.")
-                                        add_entry(found_plate_this_frame) 
+                                        add_entry(found_plate_this_frame)
                                         break
                                     else:
                                         print(f"Brak tablicy: {cleaned_text} w bazie dozwolonych tablic.")
-
                 if found_plate_this_frame:
                     track_to_plate[tid] = found_plate_this_frame
                     add_plate_to_db(found_plate_this_frame, l, t, r_, b)
                 else:
                     print(f"Nie udało się odczytać tablicy dla ID:{tid} z kamery dolnej.")
-                    
-        # --- Logika strefy wyjazdowej (detekcja pojazdu z kamery górnej) i OCR (z nowej kamery wyjazdowej) ---
+        
         overlap_ratio_exit = calculate_overlap(vehicle_box, EXITPOINT_ZONE)
-
         if overlap_ratio_exit >= OVERLAP_THRESHOLD and tid in track_to_plate:
             plate_to_exit = track_to_plate[tid]
-            if is_plate_in_db(plate_to_exit): 
-                print(f"Pojazd ID:{tid} wjechał w strefę wyjazdową. Rozpoczynam odczyt OCR z kamery wyjazdowej.")
-                
-                # NOWOŚĆ: Detekcja tablicy na klatce z kamery wyjazdowej
+            if is_plate_in_db(plate_to_exit):
+                print(f"Pojazd ID:{tid} w strefie wyjazdowej. Rozpoczynam OCR z kamery wyjazdowej.")
                 results_e = plate_detector(frame_e, imgsz=640, verbose=False)[0]
-                found_plate_this_frame_exit = None 
-
+                found_plate_this_frame_exit = None
                 for r_e in results_e.boxes:
                     if float(r_e.conf[0]) < PLATE_CONFIDENCE_THRESHOLD: continue
                     if plate_detector.names[int(r_e.cls[0])] != PLATE_TARGET_CLASS: continue
-
                     x1_e, y1_e, x2_e, y2_e = map(int, r_e.xyxy[0])
-                    # Opcjonalnie: Przytnij klatkę z kamery wyjazdowej do EXIT_PLATE_DETECTION_ZONE
-                    # crop_e_zone = frame_e[y1_epdz:y2_epdz, x1_epdz:x2_epdz] 
-
-                    # Sprawdź, czy wykryta tablica jest w ramach zdefiniowanej strefy dla kamery wyjazdowej (jeśli nie jest całym kadrem)
-                    # if x1_e >= x1_epdz and y1_e >= y1_epdz and x2_e <= x2_epdz and y2_e <= y2_epdz:
-                    if y1_e < y2_e and x1_e < x2_e: # Upewnij się, że bounding box jest prawidłowy
+                    if y1_e < y2_e and x1_e < x2_e:
                         crop = frame_e[y1_e:y2_e, x1_e:x2_e]
                         if crop.size > 0:
                             crop_rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
                             result = ocr.readtext(crop_rgb)
-                            cv2.imshow("Tablica wyjazdowa (kamera wyj.)", crop_rgb) # Zmieniona nazwa okna
-
+                            cv2.imshow("Tablica wyjazdowa (kamera wyj.)", crop_rgb)
                             for (bbox, text, conf) in result:
                                 cleaned_text = ''.join(re.findall(r'[A-Z0-9]', text.upper()))
                                 if 4 <= len(cleaned_text) <= 8:
-                                    if cleaned_text == plate_to_exit: 
+                                    if cleaned_text == plate_to_exit:
                                         found_plate_this_frame_exit = cleaned_text
-                                        print(f"OCR (EasyOCR) przy wyjeździe znalazł tablicę '{found_plate_this_frame_exit}' dla ID:{tid}.")
+                                        print(f"OCR przy wyjeździe potwierdził tablicę '{found_plate_this_frame_exit}' dla ID:{tid}.")
                                         break
                                     else:
                                         print(f"Odczytana tablica '{cleaned_text}' różni się od przypisanej '{plate_to_exit}'.")
-
                 if found_plate_this_frame_exit:
                     delete_plate_from_db(found_plate_this_frame_exit)
-                    update_exit(found_plate_this_frame_exit) 
-                    print(f"Usunięto tablicę '{found_plate_this_frame_exit}' z bazy 'plates' (wyjazd).")
-                    if tid in track_to_plate: 
-                        # Gdy samochód wyjeżdża, upewniamy się, że jego status wykroczenia jest resetowany
-                        if tid in is_currently_offending and is_currently_offending[tid] == "Zajecie kilku miejsc":
-                            del is_currently_offending[tid]
-                        # NEW: Reset status for parking/road
-                        if tid in vehicle_status:
-                            del vehicle_status[tid]
+                    update_exit(found_plate_this_frame_exit)
+                    if tid in track_to_plate:
+                        if tid in is_currently_offending: del is_currently_offending[tid]
+                        if tid in vehicle_status: del vehicle_status[tid]
                         del track_to_plate[tid]
-                    if tid in track_entered_zone: 
-                        del track_entered_zone[tid]
+                    if tid in track_entered_zone: del track_entered_zone[tid]
                 else:
-                    print(f"Nie udało się odczytać poprawnej tablicy przy wyjeździe dla ID:{tid} lub tablica nie zgadza się z przypisaną.")
-
-
-        # --- Sprawdzanie zajętości miejsc parkingowych ---
+                    print(f"Nie udało się potwierdzić tablicy przy wyjeździe dla ID:{tid}.")
+        
         occupied_zones_by_vehicle = set()
         count = 0
         for zone_name, zone_box in PARKING_ZONES.items():
@@ -522,47 +447,33 @@ while True:
                 occupied_parking_zones.add(zone_name)
                 occupied_zones_by_vehicle.add(zone_name)
                 count += 1
-
+        
         offense_type_parking = "Zajecie kilku miejsc"
-        if count >= 2: # Warunek na zajęcie wielu miejsc
+        if count >= 2:
             if tid in track_to_plate:
                 plate = track_to_plate[tid]
-                # Sprawdź, czy samochód już nie jest oznaczony jako popełniający to wykroczenie
                 if tid not in is_currently_offending or is_currently_offending[tid] != offense_type_parking:
                     print(f"Samochód {plate} (ID:{tid}) ZACZĄŁ zajmować dwa miejsca. Zapisuję wykroczenie.")
                     add_forbidden_moves(plate, offense_type_parking)
-                    # Oznacz samochód jako aktualnie popełniający wykroczenie
                     is_currently_offending[tid] = offense_type_parking
             else:
-                # Obsługa przypadku, gdy tablica nie jest jeszcze zidentyfikowana
                 print(f"Niezidentyfikowany samochód (ID:{tid}) zajmuje dwa miejsca.")
-        else: # Jeśli samochód nie zajmuje wielu miejsc
-            # Jeśli wcześniej był oznaczony jako popełniający to wykroczenie, resetujemy status
+        else:
             if tid in is_currently_offending and is_currently_offending[tid] == offense_type_parking:
                 print(f"Samochód (ID:{tid}) PRZESTAŁ zajmować dwa miejsca.")
                 del is_currently_offending[tid]
 
-        # --- NOWA LOGIKA: Sprawdzanie kolizji między pojazdami ---
         offense_type_collision = "Kolizja"
         colliding_with_ids = []
         for other_tid, other_box in tracked_objects.items():
-            if tid == other_tid:
-                continue # Nie sprawdzaj kolizji z samym sobą
-
-            # Aby uniknąć duplikacji (A z B i B z A) i nadpisywania, zawsze sprawdzaj mniejszy ID z większym
-            if tid < other_tid:
-                # Oblicz pokrycie drugiego boxa względem pierwszego
-                overlap1_2 = calculate_overlap(vehicle_box, other_box)
-                # Oblicz pokrycie pierwszego boxa względem drugiego
-                overlap2_1 = calculate_overlap(other_box, vehicle_box)
-
-                if overlap1_2 >= COLLISION_OVERLAP_THRESHOLD or overlap2_1 >= COLLISION_OVERLAP_THRESHOLD:
-                    colliding_with_ids.append(other_tid)
-                    # Zapisz kolizję dla pary (posortowane ID, żeby unikalne były)
-                    collision_pair = tuple(sorted((tid, other_tid)))
-                    collisions_this_frame[collision_pair] = True
+            if tid >= other_tid: continue
+            overlap1_2 = calculate_overlap(vehicle_box, other_box)
+            overlap2_1 = calculate_overlap(other_box, vehicle_box)
+            if overlap1_2 >= COLLISION_OVERLAP_THRESHOLD or overlap2_1 >= COLLISION_OVERLAP_THRESHOLD:
+                colliding_with_ids.append(other_tid)
+                collision_pair = tuple(sorted((tid, other_tid)))
+                collisions_this_frame[collision_pair] = True
         
-        # Obsługa stanu kolizji dla danego pojazdu
         if colliding_with_ids:
             if tid in track_to_plate:
                 plate = track_to_plate[tid]
@@ -577,169 +488,118 @@ while True:
                 print(f"Samochód (ID:{tid}) PRZESTAŁ kolizję.")
                 del is_currently_offending[tid]
 
-
-        # --- NOWA LOGIKA: Sprawdzanie statusu "parkuje" / "zaparkowany" ---
         current_vehicle_status = None
-
-        # Sprawdź, czy pojazd jest w strefie parkowania (zaparkowany)
-        is_parked = False
-        for zone_name, zone_box in PARKING_ZONES.items():
-            if calculate_overlap(vehicle_box, zone_box) >= PARKED_OVERLAP_THRESHOLD:
-                is_parked = True
-                break
-        
+        is_parked = any(calculate_overlap(vehicle_box, zone_box) >= PARKED_OVERLAP_THRESHOLD for zone_box in PARKING_ZONES.values())
         if is_parked:
             current_vehicle_status = "zaparkowany"
         else:
-            # Sprawdź, czy pojazd jest na drodze (parkuje)
-            is_on_road = False
-            for zone_name, zone_box in ROAD_ZONES.items():
-                if calculate_overlap(vehicle_box, zone_box) >= ROAD_OVERLAP_THRESHOLD:
-                    is_on_road = True
-                    break
-            
+            is_on_road = any(calculate_overlap(vehicle_box, zone_box) >= ROAD_OVERLAP_THRESHOLD for zone_box in ROAD_ZONES.values())
             if is_on_road:
                 current_vehicle_status = "parkuje"
             else:
-                current_vehicle_status = "poza strefami" # Domyślny status, jeśli nie jest ani na drodze, ani zaparkowany
+                current_vehicle_status = "poza strefami"
 
-
-        # Wyświetl status w konsoli tylko, jeśli się zmienił
         if vehicle_status.get(tid) != current_vehicle_status:
             plate_info = track_to_plate.get(tid, f"ID:{tid}")
             print(f"Samochód {plate_info} zmienił status na: {current_vehicle_status}")
             vehicle_status[tid] = current_vehicle_status
 
-
-        # Aktualizacja pozycji w bazie, jeśli tablica jest znana
         if tid in track_to_plate:
             plate = track_to_plate[tid]
             update_plate_position(plate, l, t, r_, b)
 
-        # --- Rysowanie na klatce (górnej) ---
         label_text = track_to_plate.get(tid, f"ID:{tid}")
+        status = vehicle_status.get(tid)
+        color = (0, 255, 0) if tid in track_to_plate else (255, 0, 0)
+        if status == "zaparkowany": color = (255, 255, 0)
+        elif status == "parkuje": color = (0, 165, 255)
         
-        # Zmieniamy kolor boxa w zależności od statusu (opcjonalnie)
-        if tid in vehicle_status:
-            if vehicle_status[tid] == "zaparkowany":
-                color = (255, 255, 0) # Cyjan dla zaparkowanego
-            elif vehicle_status[tid] == "parkuje":
-                color = (0, 165, 255) # Pomarańczowy dla parkującego (na drodze)
-            else:
-                color = (0, 255, 0) if tid in track_to_plate else (0, 0, 255) # Domyślny
-        else:
-            color = (0, 255, 0) if tid in track_to_plate else (0, 0, 255) # Domyślny
-            
-        # Zmień kolor na czerwony, jeśli pojazd jest w kolizji
         if tid in is_currently_offending and is_currently_offending[tid] == offense_type_collision:
-            color = (0, 0, 255) # Czerwony dla kolizji
-            cv2.putText(frame_t, "KOLIZJA", (l, t + (b-t)//2), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 3)
+            color = (0, 0, 255)
+            cv2.putText(frame_t, "KOLIZJA", (l, t + (b-t)//2), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 3)
 
         cv2.rectangle(frame_t, (l, t), (r_, b), color, 2)
         cv2.putText(frame_t, label_text, (l, t - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
-        
-        # Dodajemy status do etykiety na ekranie
-        if tid in vehicle_status:
-            status_on_screen = vehicle_status[tid]
-            cv2.putText(frame_t, status_on_screen, (l, b + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
-
+        if status:
+            cv2.putText(frame_t, status, (l, b + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
 
         if tid in track_history:
             pts = track_history[tid]
             for i in range(1, len(pts)):
+                if pts[i - 1] is None or pts[i] is None: continue
                 cv2.line(frame_t, pts[i - 1], pts[i], (0, 255, 255), 2)
-                
-    # --- Rysowanie stref parkingowych (na klatce górnej) ---
+
     for zone_name, (x1, y1, x2, y2) in PARKING_ZONES.items():
-        color = (0, 255, 255) # Domyślny kolor (żółty)
-        if zone_name in occupied_parking_zones:
-            color = (0, 0, 255) # Zmieniamy na czerwony, jeśli zajęte
-        cv2.rectangle(frame_t, (x1, y1), (x2, y2), color, 2) 
+        color = (0, 0, 255) if zone_name in occupied_parking_zones else (0, 255, 255)
+        cv2.rectangle(frame_t, (x1, y1), (x2, y2), color, 2)
         cv2.putText(frame_t, zone_name.replace("ZONE_", "Strefa "), (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
 
-    # --- NOWE: Rysowanie stref drogowych (na klatce górnej) ---
     for zone_name, (x1, y1, x2, y2) in ROAD_ZONES.items():
-        cv2.rectangle(frame_t, (x1, y1), (x2, y2), (255, 0, 255), 2) # Fioletowy kolor dla dróg
+        cv2.rectangle(frame_t, (x1, y1), (x2, y2), (255, 0, 255), 2)
         cv2.putText(frame_t, zone_name.replace("ROAD_", "Droga "), (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255), 1)
 
-    # Rysowanie strefy wjazdu i wyjazdu (na klatce górnej)
     cv2.rectangle(frame_t, (x1_ep, y1_ep), (x2_ep, y2_ep), (255, 0, 0), 2)
     cv2.putText(frame_t, "Strefa Wjazdu", (x1_ep, y1_ep - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 0), 2)
-    
     cv2.rectangle(frame_t, (x1_exp, y1_exp), (x2_exp, y2_exp), (255, 0, 0), 2)
-    cv2.putText(frame_t, "Strefa Wyjazdu (dla trackingu)", (x1_exp, y1_exp - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 0), 2)
-    
-    # NOWOŚĆ: Rysowanie strefy detekcji tablicy na kamerze wyjazdowej (jeśli inna niż cały kadr)
-    # cv2.rectangle(frame_e, (x1_epdz, y1_epdz), (x2_epdz, y2_epdz), (0, 255, 0), 2)
-    # cv2.putText(frame_e, "Strefa detekcji tablicy", (x1_epdz, y1_epdz - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+    cv2.putText(frame_t, "Strefa Wyjazdu (tracking)", (x1_exp, y1_exp - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 0), 2)
 
-    # Wyświetlanie informacji o fazie inicjalizacji
     if frame_num < INITIALIZATION_FRAMES:
         init_text = f"Faza Inicjalizacji: {frame_num}/{INITIALIZATION_FRAMES}"
         cv2.putText(frame_t, init_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
 
-    # --- Kolor światła wjazdowego ---
-    entry_light_color = (0, 0, 255)    # domyślnie czerwony
-
-    # Sprawdź, czy jakikolwiek dozwolony pojazd znajduje się w strefie ENTRYPOINT
     any_allowed_in_entry = False
     for tid_check, box_check in tracked_objects.items():
         if tid_check in track_to_plate:
             plate_check = track_to_plate[tid_check]
             if is_alowed_plate_in_db(plate_check):
-                overlap_ratio_check = calculate_overlap(box_check, ENTRYPOINT_ZONE)
-                if overlap_ratio_check >= OVERLAP_THRESHOLD:
+                if calculate_overlap(box_check, ENTRYPOINT_ZONE) >= OVERLAP_THRESHOLD:
                     any_allowed_in_entry = True
                     break
-
-    # --- NOWA LOGIKA: Sprawdzenie dostępności miejsc parkingowych ---
-    # Zliczamy zajęte miejsca parkingowe na podstawie `occupied_parking_zones`
+    
     current_occupied_spots = len(occupied_parking_zones)
+    can_enter = any_allowed_in_entry and current_occupied_spots < TOTAL_PARKING_SPOTS
 
-    # Jeśli jest pojazd dozwolony w strefie Wjazdu I są wolne miejsca — zielone światło, inaczej czerwone
-    if any_allowed_in_entry and current_occupied_spots < TOTAL_PARKING_SPOTS:
-        entry_light_color = (0, 255, 0)
+    if can_enter:
+        if gate_opened_time is None:
+            gate_opened_time = time.time()
+            print(f"Bramka wjazdowa otwarta. Start timera ({GATE_TIMEOUT}s).")
+            entry_light_color = (0, 255, 0)
+        else:
+            if time.time() - gate_opened_time > GATE_TIMEOUT:
+                print(f"Minął czas {GATE_TIMEOUT}s. Bramka wjazdowa zamknięta (timeout).")
+                entry_light_color = (0, 0, 255)
+            else:
+                entry_light_color = (0, 255, 0)
     else:
-        entry_light_color = (0, 0, 255) # Czerwone, jeśli nieuprawniony LUB brak miejsc
+        if gate_opened_time is not None:
+            print("Warunki wjazdu niespełnione. Bramka zamknięta, timer zresetowany.")
+        gate_opened_time = None
+        entry_light_color = (0, 0, 255)
 
-    # Rysuj prostokąt ENTRY_GATE_LIGHT
     cv2.rectangle(frame_t, (x1_engl, y1_engl), (x2_engl, y2_engl), entry_light_color, -1)
 
-    # --- Kolor światła wyjazdowego ---
-    exit_light_color = (0, 0, 255) # domyślnie czerwony
-
-    # Sprawdź, czy jakikolwiek dozwolony pojazd (tj. z tablicą w bazie 'plates')
-    # znajduje się w strefie EXITPOINT
-    any_allowed_in_exit = False
+    exit_light_color = (0, 0, 255)
     for tid_check, box_check in tracked_objects.items():
         if tid_check in track_to_plate:
-            plate_check = track_to_plate[tid_check]
-            if is_plate_in_db(plate_check): # Sprawdza czy auto jest na parkingu
-                overlap_ratio_check = calculate_overlap(box_check, EXITPOINT_ZONE)
-                if overlap_ratio_check >= OVERLAP_THRESHOLD:
-                    exit_light_color = (0, 255, 0) # Zmieniamy na zielone jeśli pojazd, który jest na parkingu, wjechał w strefę wyjazdu
+            if is_plate_in_db(track_to_plate[tid_check]):
+                if calculate_overlap(box_check, EXITPOINT_ZONE) >= OVERLAP_THRESHOLD:
+                    exit_light_color = (0, 255, 0)
                     break
-
-    # Rysuj prostokąt EXIT_GATE_LIGHT
     cv2.rectangle(frame_t, (x1_exgl, y1_exgl), (x2_exgl, y2_exgl), exit_light_color, -1)
 
-    # --- Wyświetlanie informacji o zajętości miejsc parkingowych ---
-    occupied_count = len(occupied_parking_zones)
-    parking_status_text = f"Zajęte: {occupied_count}/{TOTAL_PARKING_SPOTS}"
-    cv2.putText(frame_t, parking_status_text, (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 0), 2) # Biały kolor, większa czcionka
-
+    parking_status_text = f"Zajete: {current_occupied_spots}/{TOTAL_PARKING_SPOTS}"
+    cv2.putText(frame_t, parking_status_text, (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 0), 2)
 
     cv2.imshow("Dolna kamera - OCR Wjazd", cv2.resize(frame_b, None, fx=0.5, fy=0.5))
     cv2.imshow("Górna kamera - Tracking Parking", frame_t)
-    cv2.imshow("Kamera wyjazdowa - OCR Wyjazd", cv2.resize(frame_e, None, fx=0.5, fy=0.5)) # NOWOŚĆ: Wyświetl kamerę wyjazdową
-    
+    cv2.imshow("Kamera wyjazdowa - OCR Wyjazd", cv2.resize(frame_e, None, fx=0.5, fy=0.5))
+
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
 
-# Sprzątanie
 cap_bot.release()
 cap_top.release()
-cap_exit.release() # NOWOŚĆ: Zwolnij kamerę wyjazdową
+cap_exit.release()
 conn.close()
 cv2.destroyAllWindows()
 print("Program zakończony.")
