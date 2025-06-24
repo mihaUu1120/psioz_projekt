@@ -321,6 +321,8 @@ gate_opened_time = None
 
 # --- Główna pętla programu ---
 while True:
+    
+    
     ret_b, frame_b = cap_bot.read()
     ret_t, frame_t = cap_top.read()
     ret_e, frame_e = cap_exit.read()
