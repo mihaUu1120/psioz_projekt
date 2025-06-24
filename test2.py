@@ -139,13 +139,13 @@ FRAME_HEIGHT = 1080
 ENTRYPOINT_ZONE = (1280, 852, 1642, 1016)
 OVERLAP_THRESHOLD = 0.80
 x1_ep, y1_ep, x2_ep, y2_ep = ENTRYPOINT_ZONE
-ENTRY_GATE_LIGHT = (1350, 828, 1406, 843)
+ENTRY_GATE_LIGHT = (1230, 845, 1248, 1023)
 x1_engl, y1_engl, x2_engl, y2_engl = ENTRY_GATE_LIGHT
 
 # --- Konfiguracja Exitpoint (dla kamery górnej) ---
 EXITPOINT_ZONE = (198, 842, 534, 989) # Ta strefa nadal służy do detekcji pojazdu z góry
 x1_exp, y1_exp, x2_exp, y2_exp = EXITPOINT_ZONE
-EXIT_GATE_LIGHT = (205, 810, 263, 828)
+EXIT_GATE_LIGHT = (188, 825, 199, 993)
 x1_exgl, y1_exgl, x2_exgl, y2_exgl = EXIT_GATE_LIGHT
 
 # --- NOWOŚĆ: Konfiguracja strefy detekcji tablicy dla kamery wyjazdowej ---
