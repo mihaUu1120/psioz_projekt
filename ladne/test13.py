@@ -200,6 +200,7 @@ db_manager.add_allowed_plate("EL6HV57")
 
 db_manager.add_allowed_plate("EL8U902")
 db_manager.add_allowed_plate("1001")
+db_manager.add_allowed_plate("2002")
 
 # --- Bufory i zmienne stanu ---
 track_to_plate = {}

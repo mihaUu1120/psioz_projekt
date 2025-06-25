@@ -1,7 +1,7 @@
 # --- Plik Konfiguracyjny dla Systemu Monitorowania Parkingu ---
 
 # --- Konfiguracja Modeli Detekcji ---
-DETECTION_MODEL_PATH = "best_dziala_najlepiej.pt"
+DETECTION_MODEL_PATH = "best_dziala_90.pt"
 DETECTION_MODEL_PLATES_PATH = "best_plates.pt"
 
 # --- Konfiguracja Źródeł Wideo (indeksy kamer) ---
