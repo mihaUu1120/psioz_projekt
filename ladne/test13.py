@@ -193,8 +193,13 @@ if not cap_top.isOpened():
 
 # Dodaj przykładowe dozwolone tablice dla testów
 db_manager.add_allowed_plate("ELW15241")
-db_manager.add_allowed_plate("7007")
-db_manager.add_allowed_plate("2115")
+db_manager.add_allowed_plate("EL3AC61")
+db_manager.add_allowed_plate("EL7271N")
+db_manager.add_allowed_plate("EL4MF32")
+db_manager.add_allowed_plate("EL6HV57")
+
+db_manager.add_allowed_plate("EL8U902")
+db_manager.add_allowed_plate("1001")
 
 # --- Bufory i zmienne stanu ---
 track_to_plate = {}
@@ -478,52 +483,107 @@ try:
             init_text = f"Faza Inicjalizacji: {frame_num}/{INITIALIZATION_FRAMES}"
             cv2.putText(frame_t, init_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
 
-        # Logika Światła Bramy Wjazdowej: Zielone, jeśli dozwolona tablica w strefie wjazdu I parking nie jest pełny
+        # # Logika Światła Bramy Wjazdowej: Zielone, jeśli dozwolona tablica w strefie wjazdu I parking nie jest pełny
+        # any_allowed_in_entry = False
+        # for tid_check, box_check in tracked_objects.items():
+        #     if tid_check in track_to_plate:
+        #         plate_check = track_to_plate[tid_check]
+        #         if db_manager.is_allowed_plate(plate_check):
+        #             if calculate_overlap(box_check, ENTRYPOINT_ZONE) >= OVERLAP_THRESHOLD:
+        #                 any_allowed_in_entry = True
+        #                 break # Znaleziono dozwolony samochód w strefie wjazdu
+
+        # current_occupied_spots = len(occupied_parking_zones)
+        # can_enter = any_allowed_in_entry and current_occupied_spots < TOTAL_PARKING_SPOTS
+
+        # if can_enter:
+        #     if gate_opened_time is None:
+        #         gate_opened_time = time.time()
+        #         print(f"Brama wjazdowa otwarta. Start timera ({GATE_TIMEOUT}s).")
+        #         entry_light_color = (0, 255, 0) # Zielone światło
+        #     else:
+        #         if time.time() - gate_opened_time > GATE_TIMEOUT:
+        #             print(f"Limit czasu ({GATE_TIMEOUT}s) przekroczony. Brama wjazdowa zamknięta (timeout).")
+        #             entry_light_color = (0, 0, 255) # Czerwone światło
+        #         else:
+        #             entry_light_color = (0, 255, 0) # Nadal zielone
+        # else:
+        #     if gate_opened_time is not None:
+        #         print("Warunki wjazdu nie spełnione. Brama zamknięta, timer zresetowany.")
+        #     gate_opened_time = None
+        #     entry_light_color = (0, 0, 255) # Czerwone światło
+
+        # cv2.rectangle(frame_t, (x1_engl, y1_engl), (x2_engl, y2_engl), entry_light_color, -1) # Narysuj światło bramy wjazdowej
+        
+        
+        
+        # 1. Sprawdzenie warunku początkowego do otwarcia bramy
         any_allowed_in_entry = False
         for tid_check, box_check in tracked_objects.items():
-            if tid_check in track_to_plate:
-                plate_check = track_to_plate[tid_check]
-                if db_manager.is_allowed_plate(plate_check):
-                    if calculate_overlap(box_check, ENTRYPOINT_ZONE) >= OVERLAP_THRESHOLD:
-                        any_allowed_in_entry = True
-                        break # Znaleziono dozwolony samochód w strefie wjazdu
-
+            if tid_check in track_to_plate and db_manager.is_allowed_plate(track_to_plate[tid_check]):
+                if calculate_overlap(box_check, ENTRYPOINT_ZONE) >= OVERLAP_THRESHOLD:
+                    any_allowed_in_entry = True
+                    break
+        
         current_occupied_spots = len(occupied_parking_zones)
         can_enter = any_allowed_in_entry and current_occupied_spots < TOTAL_PARKING_SPOTS
 
-        if can_enter:
-            if gate_opened_time is None:
-                gate_opened_time = time.time()
-                print(f"Brama wjazdowa otwarta. Start timera ({GATE_TIMEOUT}s).")
-                entry_light_color = (0, 255, 0) # Zielone światło
-            else:
-                if time.time() - gate_opened_time > GATE_TIMEOUT:
-                    print(f"Limit czasu ({GATE_TIMEOUT}s) przekroczony. Brama wjazdowa zamknięta (timeout).")
-                    entry_light_color = (0, 0, 255) # Czerwone światło
-                else:
-                    entry_light_color = (0, 255, 0) # Nadal zielone
+        # 2. Jeśli warunek początkowy nie jest spełniony, sprawdź, czy coś jest w strefie przejazdu
+        is_car_in_passage = False
+        if not can_enter:
+            for tid_check, box_check in tracked_objects.items():
+                if calculate_overlap(box_check, ENTRY_GATE_LIGHT) > 0.0:
+                    is_car_in_passage = True
+                    break # Wystarczy jeden samochód, by utrzymać bramę otwartą
+
+        # 3. Ostateczna decyzja o kolorze światła
+        if can_enter or is_car_in_passage:
+            entry_light_color = (0, 255, 0) # Zielone
         else:
-            if gate_opened_time is not None:
-                print("Warunki wjazdu nie spełnione. Brama zamknięta, timer zresetowany.")
-            gate_opened_time = None
-            entry_light_color = (0, 0, 255) # Czerwone światło
+            entry_light_color = (0, 0, 255) # Czerwone
 
-        cv2.rectangle(frame_t, (x1_engl, y1_engl), (x2_engl, y2_engl), entry_light_color, -1) # Narysuj światło bramy wjazdowej
+        cv2.rectangle(frame_t, (x1_engl, y1_engl), (x2_engl, y2_engl), entry_light_color, -1)
+        cv2.rectangle(frame_t, ENTRY_GATE_LIGHT[:2], ENTRY_GATE_LIGHT[2:], (0, 255, 0), 1)
 
-        # Logika Światła Bramy Wyjazdowej: Zielone, jeśli śledzony samochód z aktywnym rekordem parkingowym znajduje się w strefie wyjazdu
-        exit_light_color = (0, 0, 255) # Domyślnie czerwone
+        # # Logika Światła Bramy Wyjazdowej: Zielone, jeśli śledzony samochód z aktywnym rekordem parkingowym znajduje się w strefie wyjazdu
+        # exit_light_color = (0, 0, 255) # Domyślnie czerwone
+        # for tid_check, box_check in tracked_objects.items():
+        #     if tid_check in track_to_plate:
+        #         # Sprawdź, czy tablica jest aktywnie zaparkowana (tj. w tabeli 'plates')
+        #         if db_manager.is_plate_in_active_parking(track_to_plate[tid_check]):
+        #             if calculate_overlap(box_check, EXITPOINT_ZONE) >= OVERLAP_THRESHOLD:
+        #                 exit_light_color = (0, 255, 0) # Zielone światło
+        #                 break
+        # cv2.rectangle(frame_t, (x1_exgl, y1_exgl), (x2_exgl, y2_exgl), exit_light_color, -1) # Narysuj światło bramy wyjazdowej
+
+        # # Wyświetl status parkowania
+        # parking_status_text = f"Zajete: {current_occupied_spots}/{TOTAL_PARKING_SPOTS}"
+        # cv2.putText(frame_t, parking_status_text, (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 0), 2)
+        
+        # 1. Sprawdzenie warunku początkowego do otwarcia bramy
+        can_exit = False
         for tid_check, box_check in tracked_objects.items():
-            if tid_check in track_to_plate:
-                # Sprawdź, czy tablica jest aktywnie zaparkowana (tj. w tabeli 'plates')
-                if db_manager.is_plate_in_active_parking(track_to_plate[tid_check]):
-                    if calculate_overlap(box_check, EXITPOINT_ZONE) >= OVERLAP_THRESHOLD:
-                        exit_light_color = (0, 255, 0) # Zielone światło
-                        break
-        cv2.rectangle(frame_t, (x1_exgl, y1_exgl), (x2_exgl, y2_exgl), exit_light_color, -1) # Narysuj światło bramy wyjazdowej
+            if tid_check in track_to_plate and db_manager.is_plate_in_active_parking(track_to_plate[tid_check]):
+                if calculate_overlap(box_check, EXITPOINT_ZONE) >= OVERLAP_THRESHOLD:
+                    can_exit = True
+                    break
+        
+        # 2. Jeśli warunek początkowy nie jest spełniony, sprawdź, czy coś jest w strefie przejazdu
+        is_car_in_exit_passage = False
+        if not can_exit:
+            for tid_check, box_check in tracked_objects.items():
+                if calculate_overlap(box_check, EXIT_GATE_LIGHT) > 0.0:
+                    is_car_in_exit_passage = True
+                    break
 
-        # Wyświetl status parkowania
-        parking_status_text = f"Zajęte: {current_occupied_spots}/{TOTAL_PARKING_SPOTS}"
-        cv2.putText(frame_t, parking_status_text, (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 0), 2)
+        # 3. Ostateczna decyzja o kolorze światła
+        if can_exit or is_car_in_exit_passage:
+            exit_light_color = (0, 255, 0) # Zielone
+        else:
+            exit_light_color = (0, 0, 255) # Czerwone
+
+        cv2.rectangle(frame_t, (x1_exgl, y1_exgl), (x2_exgl, y2_exgl), exit_light_color, -1)
+        cv2.rectangle(frame_t, EXIT_GATE_LIGHT[:2], EXIT_GATE_LIGHT[2:], (0, 255, 0), 1)
 
 
         # --- Wyświetlanie klatek ---
