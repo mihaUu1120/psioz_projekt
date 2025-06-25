@@ -192,7 +192,7 @@ if not cap_top.isOpened():
     exit()
 
 # Dodaj przykładowe dozwolone tablice dla testów
-db_manager.add_allowed_plate("8008")
+db_manager.add_allowed_plate("ELW15241")
 db_manager.add_allowed_plate("7007")
 db_manager.add_allowed_plate("2115")
 
@@ -324,6 +324,8 @@ try:
             if tid not in track_history: track_history[tid] = []
             track_history[tid].append((cx, cy))
             track_history[tid] = track_history[tid][-50:]
+            
+            
 
             # --- ZLECENIE OCR DLA PUNKTU WJAZDOWEGO (PRZESUNIĘTA LOGIKA) ---
             overlap_ratio_entry = calculate_overlap(vehicle_box, ENTRYPOINT_ZONE)
@@ -338,15 +340,25 @@ try:
 
             # --- ZLECENIE OCR DLA PUNKTU WYJAZDOWEGO (PRZESUNIĘTA LOGIKA) ---
             overlap_ratio_exit = calculate_overlap(vehicle_box, EXITPOINT_ZONE)
+            
             # Jeśli pojazd jest w strefie wyjazdu, ma przypisaną tablicę,
             # i nie wysłano jeszcze żądania OCR dla tego pojazdu na wyjazd
-            if overlap_ratio_exit >= OVERLAP_THRESHOLD and tid in track_to_plate and not track_exiting_zone.get(tid):
+            #  and tid in track_to_plate and not track_exiting_zone.get(tid)
+            if overlap_ratio_exit >= OVERLAP_THRESHOLD:
                 plate_to_exit = track_to_plate[tid]
+                print("1 IF")
+                print(plate_to_exit)
                 if db_manager.is_plate_in_active_parking(plate_to_exit): # Sprawdź, czy tablica jest zarejestrowana jako zaparkowana
+                    print("2 IF")
                     track_exiting_zone[tid] = True # Oznacz, że wysłano żądanie
                     request = {'tid': tid, 'expected_plate': plate_to_exit}
                     exit_ocr_requests.put(request)
                     print(f"Pojazd ID:{tid} ({plate_to_exit}) w strefie wyjazdu. Zlecono OCR do wątku WYJAZD.")
+
+            if tid in track_to_plate:
+                plate = track_to_plate[tid]
+                db_manager.add_plate_to_active_parking(plate, l, t, r_, b)
+
 
             # Wykroczenie Parkingowe: Zajmowanie wielu miejsc
             occupied_zones_by_vehicle = set()

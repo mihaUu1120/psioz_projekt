@@ -48,8 +48,8 @@ FRAME_WIDTH = 1920
 FRAME_HEIGHT = 1080
 
 # --- Konfiguracja Strefy Wjazdowej ---
-ENTRYPOINT_ZONE = (1280, 852, 1642, 1016)
 OVERLAP_THRESHOLD = 0.80 # Ogólny próg pokrycia dla stref
+ENTRYPOINT_ZONE = (1280, 852, 1642, 1016)
 ENTRY_GATE_LIGHT = (1230, 845, 1248, 1023) # Wskaźnik wizualny dla światła bramy wjazdowej
 
 # --- Konfiguracja Strefy Wyjazdowej (dla kamery górnej) ---
