@@ -1,21 +1,21 @@
-# --- Plik Konfiguracyjny dla Systemu Monitorowania Parkingu ---
+# Plik Konfiguracyjny dla Systemu Monitorowania Parkingu 
 
-# --- Konfiguracja Modeli Detekcji ---
-DETECTION_MODEL_PATH = "best_dziala_90.pt"
+# Konfiguracja Modeli Detekcji
+DETECTION_MODEL_PATH = "best_cars.pt"
 DETECTION_MODEL_PLATES_PATH = "best_plates.pt"
 
-# --- Konfiguracja Źródeł Wideo (indeksy kamer) ---
+#  Konfiguracja Źródeł Wideo (indeksy kamer) 
 VIDEO_SOURCE_BOTTOM = 2
 VIDEO_SOURCE_TOP = 0
 VIDEO_SOURCE_EXIT = 1
 
-# --- Konfiguracja Klas Obiektów i Progów Pewności ---
+#  Konfiguracja Klas Obiektów i Progów Pewności 
 TARGET_CLASS = "car"
 PLATE_TARGET_CLASS = "plate"
 CONFIDENCE_THRESHOLD = 0.50
 PLATE_CONFIDENCE_THRESHOLD = 0.75
 
-# --- Konfiguracja Miejsc Parkingowych ---
+#  Konfiguracja Miejsc Parkingowych 
 PARKING_ZONES = {
     "ZONE_1": (1340, 676, 1624, 810),
     "ZONE_2": (1335, 531, 1610, 664),
@@ -31,7 +31,7 @@ PARKING_ZONES = {
 TOTAL_PARKING_SPOTS = len(PARKING_ZONES)
 PARKING_OVERLAP_THRESHOLD = 0.2 # Minimalne pokrycie, aby uznać samochód w miejscu parkingowym
 
-# --- Konfiguracja Stref Drogowych ---
+#  Konfiguracja Stref Drogowych 
 ROAD_ZONES = {
     "ROAD_1": (995, 849, 1231, 1029),
     "ROAD_2": (994, 359, 1289, 845),
@@ -40,31 +40,32 @@ ROAD_ZONES = {
     "ROAD_5": (602, 835, 831, 1028)
 }
 
-ROAD_OVERLAP_THRESHOLD = 0.90 # Minimalne pokrycie, aby uznać samochód na drodze
-PARKED_OVERLAP_THRESHOLD = 0.50 # Minimalne pokrycie, aby uznać samochód za zaparkowany
+# Minimalne pokrycia
+ROAD_OVERLAP_THRESHOLD = 0.90
+PARKED_OVERLAP_THRESHOLD = 0.50
 
-# --- Ustawienia Rozdzielczości Kamery ---
+#  Ustawienia Rozdzielczości Kamery 
 FRAME_WIDTH = 1920
 FRAME_HEIGHT = 1080
 
-# --- Konfiguracja Strefy Wjazdowej ---
-OVERLAP_THRESHOLD = 0.80 # Ogólny próg pokrycia dla stref
+#  Konfiguracja Strefy Wjazdowej 
+OVERLAP_THRESHOLD = 0.80
 ENTRYPOINT_ZONE = (1280, 852, 1642, 1016)
-ENTRY_GATE_LIGHT = (1230, 845, 1248, 1023) # Wskaźnik wizualny dla światła bramy wjazdowej
+ENTRY_GATE_LIGHT = (1230, 845, 1248, 1023)
 
-# --- Konfiguracja Strefy Wyjazdowej (dla kamery górnej) ---
+#  Konfiguracja Strefy Wyjazdowej (dla kamery górnej) 
 EXITPOINT_ZONE = (198, 842, 534, 989)
 EXIT_GATE_LIGHT = (188, 825, 199, 993) # Wskaźnik wizualny dla światła bramy wyjazdowej
 
-# --- Próg Pokrycia dla Kolizji ---
+#  Próg Pokrycia dla Kolizji 
 COLLISION_OVERLAP_THRESHOLD = 0.10
 
-# --- Konfiguracja Ładowania Stanu i Przypisywania ---
+#  Konfiguracja Ładowania Stanu i Przypisywania 
 INITIALIZATION_FRAMES = 100 # Liczba początkowych klatek, aby tracker się ustabilizował
 REASSIGNMENT_DISTANCE_THRESHOLD = 200 # Maksymalna odległość dla ponownego przypisania znanych tablic do nowych śladów
 
-# --- Konfiguracja Odświeżania Bazy Danych ---
-DB_RELOAD_INTERVAL_FRAMES = 30 # Jak często ładować dane pojazdów z bazy danych
+#  Konfiguracja Odświeżania Bazy Danych 
+DB_RELOAD_INTERVAL_FRAMES = 30
 
-# --- Konfiguracja Timera Bramy Wjazdowej ---
-GATE_TIMEOUT = 10 # Sekundy, po których brama zamyka się po spełnieniu warunków otwarcia
+#  Konfiguracja Timera Bramy Wjazdowej 
+GATE_TIMEOUT = 10

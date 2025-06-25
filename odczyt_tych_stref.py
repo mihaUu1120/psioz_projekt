@@ -7,7 +7,7 @@ import os
 def load_config_from_file(config_path="ladne/config.py"):
     spec = importlib.util.spec_from_file_location("config", config_path)
     if spec is None:
-        print(f"Blad: Nie znaleziono pliku konfiguracyjnego pod sciezka: {config_path}")
+        print(f"Blad: Nie znaleziono pliku konfiguracyjnego (sciezka: {config_path})")
         print("Upewnij sie, ze plik config.py istnieje w tym samym katalogu.")
         exit()
     config = importlib.util.module_from_spec(spec)
